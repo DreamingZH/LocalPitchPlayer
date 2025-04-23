@@ -1,0 +1,260 @@
+/* 使用具有艺术风格的字体 */
+body {
+    background: linear-gradient(135deg, #e1f5fe, #b3e5fc);
+    font-family: 'Dancing Script', cursive;
+    color: #0277bd;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 100vh;
+    margin: 0;
+}
+
+footer {
+    margin-top: auto; /* 推至底部 */
+}
+
+.audio-player-container {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border-radius: 20px;
+    flex: 1; /* 占据剩余空间 */
+    padding: 20px;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+    width: 100%;
+    max-width: 600px;
+    animation: fadeIn 0.5s ease-out;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+h1 {
+    text-align: center;
+    margin-bottom: 30px;
+    color: #0277bd;
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.file-selector {
+    margin-bottom: 20px;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px;
+}
+
+.drag-drop-zone {
+    width: 100%;
+    height: 150px;
+    border: 2px dashed #039be5;
+    border-radius: 15px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    margin: 20px 0;
+    transition: all 0.3s ease;
+    cursor: pointer;
+}
+
+.drag-drop-zone.dragover {
+    border-color: #0277bd;
+    background-color: rgba(3, 155, 229, 0.05);
+}
+
+.drag-drop-zone .hint {
+    font-size: 0.9em;
+    color: #666;
+}
+
+.song-list {
+    max-height: 300px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin-bottom: 20px;
+    scrollbar-width: thin;
+    scrollbar-color: #039be5 rgba(255, 255, 255, 0.1);
+}
+
+.song-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.song-list::-webkit-scrollbar-thumb {
+    background-color: #039be5;
+    border-radius: 4px;
+}
+
+.song-list::-webkit-scrollbar-track {
+    background-color: rgba(255, 255, 255, 0.1);
+    border-radius: 4px;
+}
+
+.song-item {
+    padding: 10px 15px;
+    border-radius: 10px;
+    margin-bottom: 10px;
+    background-color: rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    transition: background-color 0.3s ease, transform 0.3s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.song-item:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+    transform: scale(1.02);
+}
+
+.song-item.active {
+    background-color: rgba(3, 155, 229, 0.3);
+}
+
+.player-controls {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.btn {
+    padding: 10px 20px;
+    border-radius: 50px;
+    background-color: rgba(3, 155, 229, 0.3);
+    color: #0277bd;
+    border: none;
+    transition: background-color 0.3s ease, transform 0.3s ease;
+    white-space: nowrap;
+}
+
+.btn:hover {
+    background-color: rgba(3, 155, 229, 0.5);
+    transform: scale(1.05);
+}
+
+.btn.active {
+    background-color: rgba(3, 155, 229, 0.7);
+}
+
+.pitch-shift-select {
+    background-color: rgba(255, 255, 255, 0.5);
+    color: #0277bd;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 10px;
+    transition: background-color 0.3s ease;
+}
+
+.pitch-shift-select:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+.tempo-shift-select {
+    background-color: rgba(255, 255, 255, 0.5);
+    color: #0277bd;
+    border: none;
+    padding: 10px 15px;
+    border-radius: 10px;
+    transition: background-color 0.3s ease;
+}
+
+.tempo-shift-select:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+}
+
+.row {
+    display: flex; /* 启用弹性布局 */
+    flex-wrap: wrap;
+}
+.col-md-6 {
+    flex: 0 0 50%; /* 保持50%宽度 */
+    max-width: 50%;
+}
+.d-flex {
+    display: flex;
+    align-items: center;
+}
+.justify-content-end {
+    justify-content: flex-end; /* 子元素右对齐 */
+}
+
+.progress {
+    background-color: rgba(3, 155, 229, 0.1);
+    border-radius: 10px;
+    height: 8px;
+    cursor: pointer;
+}
+
+.progress-bar {
+    background-color: #039be5;
+    border-radius: 10px;
+    height: 100%;
+    transition: width 0.2s ease;
+}
+
+.btn-style {
+    background-color: rgba(3, 155, 229, 0.3);
+    color: #0277bd;
+    border: none;
+    border-radius: 50px;
+    padding: 10px 20px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+    display: inline-block;
+}
+
+.btn-style:hover {
+    background-color: rgba(3, 155, 229, 0.5);
+}
+
+.hidden {
+    display: none;
+}
+
+/* 自定义下拉菜单的样式 */
+select {
+    background-color: #e1f5fe;
+    color: #0277bd;
+    padding: 5px;
+    border: 1px solid #b3e5fc;
+    border-radius: 3px;
+}
+
+/* 下拉菜单选项的样式 */
+select option {
+    background-color: #e1f5fe;
+    color: #0277bd;
+}
+
+#search-input {
+    flex: 1;
+    min-width: 200px;
+    /* 新增美化样式 */
+    background-color: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(3, 155, 229, 0.3);
+    border-radius: 10px;
+    padding: 10px 15px;
+    transition: background-color 0.3s ease, border-color 0.3s ease;
+}
+
+#search-input:hover {
+    background-color: rgba(255, 255, 255, 0.7);
+    border-color: rgba(3, 155, 229, 0.5);
+}
+
+#search-input.error {
+    color: red;
+}

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Music Player</title>
+    <link rel="stylesheet" href="./static/css/style.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Dancing+Script:wght@400;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+<div class="audio-player-container">
+    <h1 id="player-title">Music Player</h1>
+    <div class="file-selector flex flex-wrap items-center gap-4">
+        <label for="folder-input" class="btn-style">选择音频文件夹</label>
+        <input type="file" id="folder-input" class="hidden" webkitdirectory directory accept="audio/*">
+        <label for="single-song-input" class="btn-style">选择音频文件</label>
+        <input type="file" id="single-song-input" class="hidden" accept="audio/*" multiple>
+        <input type="text" id="search-input"
+               class="p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500"
+               placeholder="搜索歌曲名">
+    </div>
+    <div id="drag-drop-area" class="drag-drop-zone">
+        <p>将音频文件拖放到此处</p>
+        <p class="hint">(支持单个文件/多个文件，Chrome 内核浏览器支持文件拖拽)</p>
+        <p class="hint">选好文件后会自动播放哦</p>
+    </div>
+    <div class="song-list" id="song-list">
+    </div>
+    <div class="player-controls">
+        <button id="prev-btn" class="btn">
+            <i class="fa-solid fa-backward"></i> 上一曲
+        </button>
+        <button id="play-pause-btn" class="btn">
+            <i class="fa-solid fa-play"></i> 播放
+        </button>
+        <button id="next-btn" class="btn">
+            <i class="fa-solid fa-forward"></i> 下一曲
+        </button>
+        <button id="random-btn" class="btn">
+            <i class="fa-solid fa-shuffle"></i> 随机
+        </button>
+        <button id="loop-btn" class="btn">
+            <i class="fa-solid fa-repeat"></i> 循环
+        </button>
+    </div>
+    <div class="row mt-3">
+        <div class="col-md-6">
+            <div class="input-group">
+                <div>
+                    <span class="input-group-text">变调</span>
+                    <select id="pitch-shift" class="pitch-shift-select">
+                        <option value="-5">-5</option>
+                        <option value="-4">-4</option>
+                        <option value="-3">-3</option>
+                        <option value="-2">-2</option>
+                        <option value="-1">-1</option>
+                        <option value="0" selected>0</option>
+                        <option value="1">+1</option>
+                        <option value="2">+2</option>
+                        <option value="3">+3</option>
+                        <option value="4">+4</option>
+                        <option value="5">+5</option>
+                    </select>
+                    <small class="text-muted">过大会失真 建议在 ±2 范围内😉</small>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 d-flex justify-content-end">
+            <div class="input-group">
+                <div>
+                    <span class="input-group-text">变速</span>
+                    <select id="tempo-shift" class="tempo-shift-select">
+                        <option value="0.8">0.8x</option>
+                        <option value="1" selected>1</option>
+                        <option value="1.25">1.25x</option>
+                        <option value="1.5">1.5x</option>
+                        <option value="1.75">1.75x</option>
+                        <option value="2">2x</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="mt-3">
+        <div class="progress" id="progress">
+            <div id="progress-bar" class="progress-bar" role="progressbar" style="width: 0%"></div>
+        </div>
+    </div>
+</div>
+<script src="./static/js/main.js"></script>
+</body>
+
+</html>
