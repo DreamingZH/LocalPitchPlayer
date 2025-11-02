@@ -897,6 +897,10 @@ document.addEventListener('DOMContentLoaded', function () {
     const playerTitle = document.getElementById('player-title');
     const searchInput = document.getElementById('search-input');
 
+// 全局常量
+    const SEARCH_DEBOUNCE_DELAY = 150; // 搜索防抖延迟（毫秒）
+    const TIME_COMPARISON_TOLERANCE = 0.1; // 时间比较容差（秒）
+
 // 全局变量
     let songs = [];
     let currentSongIndex = 0;
@@ -1085,9 +1089,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-// 常量定义
-    const SEARCH_DEBOUNCE_DELAY = 150; // 搜索防抖延迟（毫秒）
-
 // 处理搜索输入（使用防抖优化性能）
     let searchDebounceTimer = null;
     function handleSearchInput() {
@@ -1144,7 +1145,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     currentSeek = parseFloat(detail.timePlayed);
                     pitchShifter.currentTime = currentSeek;
                     // 使用数值比较而不是字符串比较以确保准确性
-                    if (detail.timePlayed >= pitchShifter.duration - 0.1) {
+                    if (detail.timePlayed >= pitchShifter.duration - TIME_COMPARISON_TOLERANCE) {
                         if (isLooping) {
                             currentSeek = 0;
                             playSong(song);
@@ -1287,7 +1288,8 @@ document.addEventListener('DOMContentLoaded', function () {
 // 断开 PitchShifter 连接
     function disconnectPitchShifter() {
         if (pitchShifter) {
-            // 移除所有事件监听器（因为我们要完全丢弃这个实例）
+            // 移除所有事件监听器（PitchShifter.off() 支持无参数调用来移除所有监听器）
+            // 注意：这是完全丢弃当前实例时的正确做法
             if (typeof pitchShifter.off === 'function') {
                 pitchShifter.off();
             }
