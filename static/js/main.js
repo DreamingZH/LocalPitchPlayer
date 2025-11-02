@@ -1114,7 +1114,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
             searchInput.classList.toggle('error', !hasMatch && searchTerm !== '');
             
-            // 如果没有匹配且搜索不为空，显示所有项目
+            // 如果没有匹配且搜索不为空，显示所有项目（便于用户发现输入错误）
             if (!hasMatch && searchTerm !== '') {
                 songItems.forEach((item) => {
                     item.classList.remove('hidden');
@@ -1288,7 +1288,9 @@ document.addEventListener('DOMContentLoaded', function () {
     function disconnectPitchShifter() {
         if (pitchShifter) {
             // 移除所有事件监听器（因为我们要完全丢弃这个实例）
-            pitchShifter.off();
+            if (typeof pitchShifter.off === 'function') {
+                pitchShifter.off();
+            }
             pitchShifter.disconnect();
         }
         stopProgressAnimation();
