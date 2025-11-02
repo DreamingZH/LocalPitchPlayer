@@ -915,6 +915,7 @@ document.addEventListener('DOMContentLoaded', function () {
         audioContext.resume().then(() => {
             isPlaying = true;
             playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> 暂停';
+            startProgressAnimation();
         });
     };
 
@@ -1084,30 +1085,39 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-// 处理搜索输入
+// 处理搜索输入（使用防抖优化性能）
+    let searchDebounceTimer = null;
     function handleSearchInput() {
-        const searchTerm = searchInput.value.trim().toLowerCase();
-        const songItems = songList.querySelectorAll('.song-item');
-        let hasMatch = false;
-
-        songItems.forEach((item) => {
-            const songName = item.textContent.toLowerCase();
-            if (searchTerm === '' || songName.includes(searchTerm)) {
-                item.style.display = 'block';
-                hasMatch = true;
-            } else {
-                item.style.display = 'none';
-            }
-        });
-
-        if (!hasMatch && searchTerm !== '') {
-            searchInput.classList.add('error');
-            songItems.forEach((item) => {
-                item.style.display = 'block';
-            });
-        } else {
-            searchInput.classList.remove('error');
+        if (searchDebounceTimer) {
+            clearTimeout(searchDebounceTimer);
         }
+        
+        searchDebounceTimer = setTimeout(() => {
+            const searchTerm = searchInput.value.trim().toLowerCase();
+            const songItems = songList.querySelectorAll('.song-item');
+            let hasMatch = false;
+
+            songItems.forEach((item) => {
+                const songName = item.textContent.toLowerCase();
+                const isMatch = searchTerm === '' || songName.includes(searchTerm);
+                
+                // 使用 classList 而不是直接修改 style 以提高性能
+                item.classList.toggle('hidden', !isMatch);
+                
+                if (isMatch) {
+                    hasMatch = true;
+                }
+            });
+
+            searchInput.classList.toggle('error', !hasMatch && searchTerm !== '');
+            
+            // 如果没有匹配且搜索不为空，显示所有项目
+            if (!hasMatch && searchTerm !== '') {
+                songItems.forEach((item) => {
+                    item.classList.remove('hidden');
+                });
+            }
+        }, 150); // 150ms 防抖延迟
     }
 
 // 播放歌曲
@@ -1130,7 +1140,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 pitchShifter.on('play', (detail) => {
                     currentSeek = parseFloat(detail.timePlayed);
                     pitchShifter.currentTime = currentSeek;
-                    updateProgress(currentSeek, pitchShifter.duration);
                     if (detail.formattedTimePlayed >= pitchShifter.formattedDuration) {
                         if (isLooping) {
                             currentSeek = 0;
@@ -1164,6 +1173,7 @@ document.addEventListener('DOMContentLoaded', function () {
             fadeOut(gainNode, () => {
                 disconnectPitchShifter();
                 isPlaying = false;
+                stopProgressAnimation();
                 playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i> 播放';
             });
         }
@@ -1180,16 +1190,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+// 淡入淡出效果的定时器ID
+    let fadeIntervalId = null;
+
 // 淡入效果
     function fadeIn(gainNode, callback) {
+        if (fadeIntervalId) {
+            clearInterval(fadeIntervalId);
+        }
         const fadeStep = 0.1;
         let currentVolume = gainNode.gain.value;
 
-        const fadeInInterval = setInterval(() => {
+        fadeIntervalId = setInterval(() => {
             currentVolume = Math.min(currentVolume + fadeStep, 1);
             gainNode.gain.value = currentVolume;
             if (currentVolume >= 1) {
-                clearInterval(fadeInInterval);
+                clearInterval(fadeIntervalId);
+                fadeIntervalId = null;
                 if (callback) {
                     callback();
                 }
@@ -1199,14 +1216,18 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 淡出效果
     function fadeOut(gainNode, callback) {
+        if (fadeIntervalId) {
+            clearInterval(fadeIntervalId);
+        }
         const fadeStep = 0.1;
         let currentVolume = gainNode.gain.value;
 
-        const fadeOutInterval = setInterval(() => {
+        fadeIntervalId = setInterval(() => {
             currentVolume = Math.max(currentVolume - fadeStep, 0);
             gainNode.gain.value = currentVolume;
             if (currentVolume <= 0) {
-                clearInterval(fadeOutInterval);
+                clearInterval(fadeIntervalId);
+                fadeIntervalId = null;
                 if (callback) {
                     callback();
                 }
@@ -1215,11 +1236,29 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
 // 更新进度条
+    let progressAnimationId = null;
     function updateProgress(currentTime, duration) {
-        if (isPlaying) {
-            const progress = (currentTime / duration) * 100;
-            progressBar.style.width = `${progress}%`;
-            requestAnimationFrame(() => updateProgress(currentTime, duration));
+        const progress = (currentTime / duration) * 100;
+        progressBar.style.width = `${progress}%`;
+    }
+    
+    function startProgressAnimation() {
+        if (progressAnimationId) {
+            cancelAnimationFrame(progressAnimationId);
+        }
+        function animate() {
+            if (isPlaying && pitchShifter) {
+                updateProgress(pitchShifter.timePlayed, pitchShifter.duration);
+                progressAnimationId = requestAnimationFrame(animate);
+            }
+        }
+        animate();
+    }
+    
+    function stopProgressAnimation() {
+        if (progressAnimationId) {
+            cancelAnimationFrame(progressAnimationId);
+            progressAnimationId = null;
         }
     }
 
@@ -1244,7 +1283,13 @@ document.addEventListener('DOMContentLoaded', function () {
 // 断开 PitchShifter 连接
     function disconnectPitchShifter() {
         if (pitchShifter) {
+            pitchShifter.off(); // 清理所有事件监听器
             pitchShifter.disconnect();
+        }
+        stopProgressAnimation();
+        if (fadeIntervalId) {
+            clearInterval(fadeIntervalId);
+            fadeIntervalId = null;
         }
     }
 
