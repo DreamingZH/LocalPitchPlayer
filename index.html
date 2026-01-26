@@ -3,55 +3,76 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <meta name="theme-color" content="#f8fafc" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#0f172a" media="(prefers-color-scheme: dark)">
+
     <title>Music Player</title>
+
     <link rel="stylesheet" href="./static/css/style.css">
+
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+
+    <meta name="apple-mobile-web-app-title" content="Music Player">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-touch-fullscreen" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" id="statusBarMeta" content="black">
+
+    <meta content="telephone=no" name="format-detection"/>
+    <meta content="email=no" name="format-detection"/>
+
+    <link rel="apple-touch-icon" sizes="180x180" href="./static/img/icon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="./static/img/icon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="./static/img/icon/favicon-16x16.png">
+    <link rel="manifest" href="./static/img/icon/site.webmanifest">
 </head>
 
 <body>
 <div class="audio-player-container">
+    <button id="lang-toggle" class="lang-toggle" title="Switch Language">
+        <i class="fa-solid fa-language"></i>
+        <span id="lang-label">EN</span>
+    </button>
     <h1 id="player-title" title="Music Player">Music Player</h1>
     <div class="file-selector">
         <label for="folder-input" class="btn-style">
-            <i class="fa-solid fa-folder-open"></i> <span>选择文件夹</span>
+            <i class="fa-solid fa-folder-open"></i> <span data-i18n="selectFolder">选择文件夹</span>
         </label>
         <input type="file" id="folder-input" class="hidden" webkitdirectory directory accept="audio/*">
         <label for="single-song-input" class="btn-style">
-            <i class="fa-solid fa-music"></i> <span>选择文件</span>
+            <i class="fa-solid fa-music"></i> <span data-i18n="selectFile">选择文件</span>
         </label>
         <input type="file" id="single-song-input" class="hidden" accept="audio/*" multiple>
-        <input type="text" id="search-input" placeholder="搜索歌曲...">
+        <input type="text" id="search-input" data-i18n-placeholder="searchPlaceholder" placeholder="搜索歌曲...">
     </div>
     <div id="drag-drop-area" class="drag-drop-zone">
-        <p><i class="fa-solid fa-cloud-arrow-up"></i> 将音频文件拖放到此处</p>
-        <p class="hint">支持单个或多个文件 · 选择后自动播放</p>
+        <p><i class="fa-solid fa-cloud-arrow-up"></i> <span data-i18n="dragDropHint">将音频文件拖放到此处</span></p>
+        <p class="hint" data-i18n="dragDropSubHint">支持单个或多个文件 · 选择后自动播放</p>
     </div>
     <div class="song-list" id="song-list"></div>
     <div class="player-controls">
-        <button id="prev-btn" class="btn" title="上一曲">
-            <i class="fa-solid fa-backward"></i> <span>上一曲</span>
+        <button id="prev-btn" class="btn" data-i18n-title="prev" title="上一曲">
+            <i class="fa-solid fa-backward"></i> <span data-i18n="prev">上一曲</span>
         </button>
-        <button id="play-pause-btn" class="btn" title="播放">
-            <i class="fa-solid fa-play"></i> <span>播放</span>
+        <button id="play-pause-btn" class="btn" data-i18n-title="play" title="播放">
+            <i class="fa-solid fa-play"></i> <span data-i18n="play">播放</span>
         </button>
-        <button id="next-btn" class="btn" title="下一曲">
-            <i class="fa-solid fa-forward"></i> <span>下一曲</span>
+        <button id="next-btn" class="btn" data-i18n-title="next" title="下一曲">
+            <i class="fa-solid fa-forward"></i> <span data-i18n="next">下一曲</span>
         </button>
-        <button id="random-btn" class="btn" title="随机播放">
-            <i class="fa-solid fa-shuffle"></i> <span>随机</span>
+        <button id="random-btn" class="btn" data-i18n-title="shuffle" title="随机播放">
+            <i class="fa-solid fa-shuffle"></i> <span data-i18n="shuffle">随机</span>
         </button>
-        <button id="loop-btn" class="btn" title="循环播放">
-            <i class="fa-solid fa-repeat"></i> <span>循环</span>
+        <button id="loop-btn" class="btn" data-i18n-title="loop" title="循环播放">
+            <i class="fa-solid fa-repeat"></i> <span data-i18n="loop">循环</span>
         </button>
     </div>
     <div class="row">
         <div class="col-md-6">
             <div class="input-group">
                 <div>
-                    <span class="input-group-text">变调</span>
+                    <span class="input-group-text" data-i18n="pitch">变调</span>
                     <select id="pitch-shift" class="pitch-shift-select">
                         <option value="-5">-5</option>
                         <option value="-4">-4</option>
@@ -65,14 +86,14 @@
                         <option value="4">+4</option>
                         <option value="5">+5</option>
                     </select>
-                    <small class="text-muted">建议 ±2 范围</small>
+                    <small class="text-muted" data-i18n="pitchHint">建议 ±2 范围</small>
                 </div>
             </div>
         </div>
         <div class="col-md-6">
             <div class="input-group">
                 <div class="justify-end">
-                    <span class="input-group-text">变速</span>
+                    <span class="input-group-text" data-i18n="speed">变速</span>
                     <select id="tempo-shift" class="tempo-shift-select">
                         <option value="0.5">0.5x</option>
                         <option value="0.6">0.6x</option>
@@ -96,6 +117,7 @@
         </div>
     </div>
 </div>
+<script src="./static/js/i18n.js"></script>
 <script src="./static/js/main.js"></script>
 </body>
 

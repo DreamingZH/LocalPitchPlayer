@@ -914,7 +914,8 @@ document.addEventListener('DOMContentLoaded', function () {
         gainNode.connect(audioContext.destination);
         audioContext.resume().then(() => {
             isPlaying = true;
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> 暂停';
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span data-i18n="pause">暂停</span>';
+            i18n.updatePageTexts();
         });
     };
 
@@ -1164,7 +1165,8 @@ document.addEventListener('DOMContentLoaded', function () {
             fadeOut(gainNode, () => {
                 disconnectPitchShifter();
                 isPlaying = false;
-                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i> 播放';
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span data-i18n="play">播放</span>';
+                i18n.updatePageTexts();
             });
         }
     }

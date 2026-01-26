@@ -64,6 +64,7 @@ body {
     max-width: 560px;
     animation: fadeIn 0.4s ease-out;
     border: 1px solid var(--border);
+    position: relative;
 }
 
 @keyframes fadeIn {
@@ -75,6 +76,39 @@ body {
         opacity: 1;
         transform: translateY(0);
     }
+}
+
+/* 语言切换按钮 */
+.lang-toggle {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    background: var(--accent-light);
+    color: var(--accent);
+    border: none;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    z-index: 10;
+    -webkit-tap-highlight-color: transparent;
+}
+
+.lang-toggle:hover {
+    background: var(--accent-medium);
+}
+
+.lang-toggle:active {
+    transform: scale(0.96);
+}
+
+.lang-toggle i {
+    font-size: 0.9rem;
 }
 
 /* 标题 - 修复过长问题 */
@@ -90,7 +124,7 @@ h1#player-title {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    padding: 0 8px;
+    padding: 0 40px; /* 为语言按钮留出空间 */
 }
 
 /* 文件选择区域 */
@@ -376,9 +410,21 @@ small {
         margin-top: 8px;
     }
 
+    .lang-toggle {
+        top: 12px;
+        right: 12px;
+        padding: 5px 8px;
+        font-size: 0.75rem;
+    }
+
+    .lang-toggle i {
+        font-size: 0.85rem;
+    }
+
     h1#player-title {
         font-size: 1.25rem;
         margin-bottom: 16px;
+        padding: 0 50px; /* 移动端为语言按钮留更多空间 */
     }
 
     .file-selector {
