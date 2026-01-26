@@ -874,6 +874,22 @@ class PitchShifter {
             this._node.removeEventListener(e.name, event => e.cb(event.detail));
         });
     }
+
+    stop() {
+        // 1. 断开音频连接
+        this.disconnect();
+
+        // 2. 关键：移除事件监听器，断开闭包引用
+        if (this._node) {
+            this._node.onaudioprocess = null; // 必须手动置空，否则会导致严重内存泄漏
+            this._node = null;                // 解除节点引用
+        }
+
+        // 3. 可选：清空内部大对象引用，加速 GC
+        this._filter = null;
+        this._soundtouch = null;
+        this.listeners = [];
+    }
 }
 
 //# sourceMappingURL=soundtouch.js.map
@@ -1114,7 +1130,21 @@ document.addEventListener('DOMContentLoaded', function () {
 // 播放歌曲
     function playSong(song) {
         if (!song) return;
-        disconnectPitchShifter();
+
+        if (pitchShifter) {
+            try {
+                // 如果已定义 stop 方法则调用，彻底释放内存
+                if (typeof pitchShifter.stop === 'function') {
+                    pitchShifter.stop();
+                } else {
+                    pitchShifter.disconnect();
+                }
+            } catch (e) {
+                console.error("Error stopping pitchShifter:", e);
+            }
+            pitchShifter = null; // 解除全局引用
+        }
+
         if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
@@ -1218,10 +1248,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 更新进度条
     function updateProgress(currentTime, duration) {
-        if (isPlaying) {
+        if (isPlaying || currentTime === 0) { // 允许在停止时重置为0
             const progress = (currentTime / duration) * 100;
             progressBar.style.width = `${progress}%`;
-            requestAnimationFrame(() => updateProgress(currentTime, duration));
         }
     }
 
