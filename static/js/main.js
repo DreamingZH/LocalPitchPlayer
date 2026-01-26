@@ -1133,8 +1133,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     updateProgress(currentSeek, pitchShifter.duration);
                     if (detail.formattedTimePlayed >= pitchShifter.formattedDuration) {
                         if (isLooping) {
+                            pitchShifter.percentagePlayed = 0;
                             currentSeek = 0;
-                            playSong(song);
                         } else {
                             handleNextSong();
                         }
