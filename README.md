@@ -11,15 +11,13 @@
 
 ## Overview
 
-**Local Pitch Player** is a lightweight, browser-based audio player designed for musicians, dancers, and audio enthusiasts who require real-time manipulation of audio playback. 
+**Local Pitch Player** is a lightweight, browser-based audio player designed for audio enthusiasts who require real-time manipulation of audio playback. 
 
-Unlike standard media players, this application processes audio entirely within the client-side browser using the **Web Audio API**. This ensures complete privacy and low-latency performance without the need to upload files to a remote server.
+Unlike standard media players, this application processes audio entirely within the client-side browser using the **Web Audio API**. This ensures **complete privacy** and **low-latency performance** without the need to upload files to a remote server.
 
 The core functionality leverages the **SoundTouchJS** library to provide independent control over pitch and tempo. This allows users to:
 *   Change the key of a song without affecting its speed.
 *   Adjust the playback speed without altering the pitch.
-
-These features are essential for instrument practice, transcription, and dance choreography.
 
 ---
 
@@ -48,10 +46,12 @@ If you are a developer and wish to modify the code or run it strictly offline:
 ## Key Features
 
 ### 🎵 Local File Processing
-Supports intuitive **drag-and-drop** functionality for individual audio files or entire directory selection. All audio processing occurs locally within your browser, ensuring your files remain private.
+Supports intuitive **drag-and-drop** functionality for individual audio files or entire directory selection. 
+
+All audio processing occurs **locally** within your browser, ensuring your files remain private.
 
 ### 🎛️ Real-Time Audio Manipulation
-*   **Pitch Shifting**: Adjust pitch by semitones (±5 range), perfect for key transposition to match your instrument.
+*   **Pitch Shifting**: Adjust pitch by semitones (**±5 range**), perfect for key transposition to match your instrument.
 *   **Tempo Scaling**: Modify playback speed from **0.5x** to **1.5x** without pitch distortion, ideal for slowing down complex passages.
 
 ### 🎮 Playback Controls
@@ -69,7 +69,7 @@ For quicker control, use your keyboard:
 
 ### 📱 Responsive Design
 Features a modern, adaptive user interface that functions seamlessly across:
-*   Desktop computers (Recommended for best experience)
+*   Desktop computers (**Recommended for best experience**)
 *   Tablets
 *   Mobile smartphones
 
