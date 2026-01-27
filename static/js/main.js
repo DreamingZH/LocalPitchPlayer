@@ -1280,4 +1280,26 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     setupAudioPlayer();
+
+    document.addEventListener('keydown', function (event) {
+        const key = event.key.toLowerCase();
+        if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
+            return;
+        }
+        switch (key) {
+            case ' ':
+            case 'enter':
+                event.preventDefault();
+                playPauseBtn.click()
+                break;
+            case 'arrowleft':
+                event.preventDefault();
+                prevBtn.click()
+                break;
+            case 'arrowright':
+                event.preventDefault();
+                nextBtn.click()
+                break;
+        }
+    });
 })

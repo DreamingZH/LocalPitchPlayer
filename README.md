@@ -1,73 +1,101 @@
-# 摸鱼产物：本地音频升降调播放器 🎶
+# Local Pitch Player
 
-## 一、项目背景：论DDL前的时间管理反向操作
+![License](https://img.shields.io/badge/License-LGPL_v2.1-blue.svg)
+![HTML5](https://img.shields.io/badge/html5-%23E34F26.svg?style=flat&logo=html5&logoColor=white)
+![CSS3](https://img.shields.io/badge/css3-%231572B6.svg?style=flat&logo=css3&logoColor=white)
+![JavaScript](https://img.shields.io/badge/javascript-%23323330.svg?style=flat&logo=javascript&logoColor=%23F7DF1E)
+![Platform](https://img.shields.io/badge/platform-Web-green)
+![Status](https://img.shields.io/website?url=https%3A%2F%2Fdreamingzh.github.io%2FLocalPitchPlayer%2F&label=Live%20Demo&up_message=online&up_color=brightgreen)
 
-大家好，作者是一个非科班出身的代码爱好者，最近正被与此项目毫不相干的毕业论文初稿DDL追着跑。
+> 🎧 **Start enjoying music now:** [**https://dreamingzh.github.io/LocalPitchPlayer/**](https://dreamingzh.github.io/LocalPitchPlayer/)
 
-按理说这个时候应该闭门造车、挑灯夜战写论文对不对？
+## Overview
 
-但本人秉持“时间就像海绵里的水，挤一挤还能再摸会鱼”的原则，觉得直接写论文太单调，不如先给自己上点强度——
+**Local Pitch Player** is a lightweight, browser-based audio player designed for musicians, dancers, and audio enthusiasts who require real-time manipulation of audio playback. 
 
-于是，在毕业论文初稿截止前，我先鼓捣出了这个 **本地升降调播放器**，然后再回去写论文。
+Unlike standard media players, this application processes audio entirely within the client-side browser using the **Web Audio API**. This ensures complete privacy and low-latency performance without the need to upload files to a remote server.
 
-## 二、项目用途：找不到合心意的软件？自己造！
+The core functionality leverages the **SoundTouchJS** library to provide independent control over pitch and tempo. This allows users to:
+*   Change the key of a song without affecting its speed.
+*   Adjust the playback speed without altering the pitch.
 
-事情的起因很简单：我想在电脑上用 **升降调功能播放本地音乐**，找了一圈实在没有满意的。
+These features are essential for instrument practice, transcription, and dance choreography.
 
-于是这个项目诞生了，目前功能足够自用，界面不算丑，核心是能让我在写论文时用奇怪的调调听音乐。
+---
 
-### 🌟 核心功能（自用够用版）
+## 🚀 Usage
 
-1. **升降调**：支持±5个半音调节，写论文时听奇怪的变调，提神醒脑效果极佳。
-2. **丝滑进度条**：点击进度条任意位置跳转，精准定位到音乐的“名场面”。
-3. **本地文件直读**：拖拽/选择文件就能加载歌曲，支持常见音频格式，电脑里的存货随便播。
-4. **随机/循环模式**：写论文时随机播放，防止听腻；循环喜欢的单曲，沉浸式薅头发（不是）。
+### 🌍 Online Version (Recommended)
+You can use the application directly in your browser without any installation. It works on PC, Mac, Android, and iOS.
 
-### 🚫 非专业声明
+👉 **[Click here to launch Local Pitch Player](https://dreamingzh.github.io/LocalPitchPlayer/)**
 
-- 代码可能不够优雅，毕竟非科班出身。比如你会发现某个js文件是作者为了能让网页在本地能直接打开，而硬生生把几个js文件合并出来的（懒人做法）。
-- 不打算频繁更新，除非某天突然灵感爆发（概率约等于论文一次性过审）。
-- 界面美化？功能扩展？看心情（和论文进度），佛系开发，主打一个“够用就行”。
+### 💻 Local Development
+If you are a developer and wish to modify the code or run it strictly offline:
 
-## 三、技术栈：站在巨人的肩膀上摸鱼
+1. **Clone the repository**:
+   ```bash
+   git clone https://github.com/DreamingZH/LocalPitchPlayer.git
+   ```
 
-- **核心库**：[Soundtouch.js](https://github.com/cutterbl/SoundTouchJS)，实现升降调和变速播放，感谢开源！
-- **灵感来源**：参考了 [variable-speed-pitch-audio-player](https://github.com/goto920/variable-speed-pitch-audio-player)
-  项目
-- **辅助工具**：豆包、Kimi yyds，居然真的让我写完这个项目之后还有时间把毕业论文写完。
+2. **Run the application**:
+   Simply open the `index.html` file in a modern web browser (Chrome, Firefox, Edge, or Safari).
 
-## 四、如何使用：极简教程
+   > **Note**: Due to browser security policies regarding CORS (Cross-Origin Resource Sharing), some advanced features might require serving the directory via a local HTTP server (e.g., Live Server in VS Code, `python -m http.server`, etc.) rather than opening the file directly via the `file://` protocol.
 
-1. **打开网页**：下载所有文件至本地，保持目录结构不变，双击 `index.html` 打开网页。（其实你也可以直接访问[这个网页](https://dreamingzh.github.io/LocalPitchPlayer/)）
-2. **你应该看见的是**：一个还说得过去的页面布局，和能反应作者精神状态的英文字体。如果图标不正常，请把html文件扔给AI更换CDN。如果你发现标题英文文字扭曲，这是正常的，因为这就是作者的精神状态。
-3. **选择音频方式**：
-    + **选择音频文件夹**：点击“选择音频文件夹”按钮，选择包含音频文件的文件夹，自动加载文件夹内所有音频文件（包括子文件夹内）。
-    + **选择音频文件**：点击“选择音频文件”按钮，选择你想播放的音频文件（可多选，支持常见格式）。
-    + **拖拽文件**：将音频文件拖入网页框格内（可多选，支持常见格式）。
-    + （你可以放心的上传，文件只是被浏览器读取了，不会有任何人知道你上传了什么）
-4. **播放音频**：点击“播放”按钮，享受音乐的同时写论文（或摸鱼）。
-5. **调节音频**：使用变速调选项调节音频的升降调，±5个半音，不过变调幅度太大容易失真，建议±2范围内。
-6. **调节速度**：使用变调选项调节音频的播放速度，0.8x-2x（不够的话请自行把html喂给AI让他加选项）。
-7. **进度条跳转**：点击进度条任意位置，音频会跳转到你点击的位置。
-8. **歌曲搜索**：在搜索框中输入歌曲名，你甚至不用点击“搜索”按钮，因为根本不存在那种按钮，网页会自动定位到播放列表内对应的歌曲。
+---
 
-## 五、致谢环节：感谢那些让我写完这个项目的人
+## Key Features
 
-- **豆包、Kimi**：感谢AI的代码补全和bug排查，一时分不清我和AI谁才是真正的牛马...
-- **Soundtouch.js**：提供了强大的音频处理能力，让升降调功能不再是梦想。
-- **未来的你**：感谢你点开这个README，虽然项目可能不够完美，但希望它能给你的生活增添一点乐趣~
+### 🎵 Local File Processing
+Supports intuitive **drag-and-drop** functionality for individual audio files or entire directory selection. All audio processing occurs locally within your browser, ensuring your files remain private.
 
-## 六、免责声明：叠甲
+### 🎛️ Real-Time Audio Manipulation
+*   **Pitch Shifting**: Adjust pitch by semitones (±5 range), perfect for key transposition to match your instrument.
+*   **Tempo Scaling**: Modify playback speed from **0.5x** to **1.5x** without pitch distortion, ideal for slowing down complex passages.
 
-- 你如果问现在这个项目有没有bug，我会说“有的兄弟有的，这样的玄学bug我也不知道有多少个”，但我可以告诉你一些可能的bug：
-    - 文件名不要太长，因为作者懒得处理文件名过长的情况（论文要紧！）。
-    - 没有专门适配macOS系统，因为作者穷。
-    - 不适配手机，作者懒得调试。
-- 播放时出现的bug直接刷新可以解决99%的情况，剩下的1%建议自己修好之后来教我（bushi）。
-- 项目开源但不经常维护，遇到bug请自行佛系处理（或者提issue，但回复可能很慢，毕竟论文优先）。
-- 功能有限，不要期待“AI自动写论文”之类的扩展。
-- 最后，祝大家论文顺利，代码无bug，听音乐时永远能找到最舒服的调调~
+### 🎮 Playback Controls
+Includes a full suite of standard transport controls:
+*   Play / Pause
+*   Previous / Next Track
+*   Loop Mode
+*   Shuffle / Random Play
 
-（写完这个README，我滚去写论文了，有缘更新再见！）
+### ⌨️ Keyboard Shortcuts
+For quicker control, use your keyboard:
+*   **Space / Enter**: Toggle Play / Pause
+*   **Left Arrow (←)**: Play Previous Track
+*   **Right Arrow (→)**: Play Next Track
 
-2025年4月23日
+### 📱 Responsive Design
+Features a modern, adaptive user interface that functions seamlessly across:
+*   Desktop computers (Recommended for best experience)
+*   Tablets
+*   Mobile smartphones
+
+### 🎨 Theme Support
+The interface automatically adapts to your system preferences, supporting both **Light** and **Dark** modes for comfortable viewing in any environment.
+
+### 🌐 Internationalization
+Full support for **English** and **Chinese (Simplified)** languages, automatically detected based on browser settings or manually togglable.
+
+---
+
+## Browser Support
+
+This application relies on the modern **Web Audio API**. It is compatible with the latest versions of:
+
+*   ✅ Google Chrome
+*   ✅ Mozilla Firefox
+*   ✅ Microsoft Edge
+*   ✅ Apple Safari (iOS and macOS)
+
+---
+
+## Acknowledgments
+
+This project incorporates the [SoundTouchJS](https://github.com/cutterbl/SoundTouchJS) library for high-quality audio time-stretching and pitch-shifting processing.
+
+## License
+
+This project is open-source and available under the [LGPL v2.1 License](LICENSE).
