@@ -925,6 +925,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let audioContext = new window.AudioContext(); // 只创建一次 AudioContext
     let pitchShifter;
     let gainNode;
+    let loadRequestId = 0;
     let play = function () {
         pitchShifter.connect(gainNode);
         gainNode.connect(audioContext.destination);
@@ -959,6 +960,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
         progress.addEventListener('click', function (event) {
+            if (!pitchShifter) return;
             const rect = progress.getBoundingClientRect();
             const clickX = event.clientX - rect.left;
             const progressWidth = rect.width;
@@ -1131,6 +1133,8 @@ document.addEventListener('DOMContentLoaded', function () {
     function playSong(song) {
         if (!song) return;
 
+        const currentRequestId = ++loadRequestId;
+
         if (pitchShifter) {
             try {
                 // 如果已定义 stop 方法则调用，彻底释放内存
@@ -1152,19 +1156,20 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const reader = new FileReader();
         reader.onload = (e) => {
+            if (currentRequestId !== loadRequestId) return;
             audioContext.decodeAudioData(e.target.result, function (audioBuffer) {
+                if (currentRequestId !== loadRequestId) return;
                 const bufferSize = 16384;
-                pitchShifter = new PitchShifter(audioContext, audioBuffer, bufferSize);
-                pitchShifter.pitch = Math.pow(2.0, currentPitchShift / 12.0);
-                pitchShifter.tempo = currentTempoShift;
-
-                pitchShifter.on('play', (detail) => {
+                const ps = new PitchShifter(audioContext, audioBuffer, bufferSize);
+                pitchShifter = ps;
+                ps.pitch = Math.pow(2.0, currentPitchShift / 12.0);
+                ps.tempo = currentTempoShift;
+                ps.on('play', (detail) => {
                     currentSeek = parseFloat(detail.timePlayed);
-                    pitchShifter.currentTime = currentSeek;
-                    updateProgress(currentSeek, pitchShifter.duration);
-                    if (detail.formattedTimePlayed >= pitchShifter.formattedDuration) {
+                    updateProgress(currentSeek, ps.duration);
+                    if (detail.formattedTimePlayed >= ps.formattedDuration) {
                         if (isLooping) {
-                            pitchShifter.percentagePlayed = 0;
+                            ps.percentagePlayed = 0;
                             currentSeek = 0;
                         } else {
                             handleNextSong();
