@@ -308,7 +308,7 @@ h1#player-title {
 
 .col-md-6 {
     flex: 1;
-    min-width: 200px;
+    min-width: 100px;
 }
 
 .input-group {
@@ -490,14 +490,6 @@ small {
         font-size: 0.85rem;
     }
 
-    .col-md-6 {
-        min-width: 100%;
-    }
-
-    .justify-end {
-        justify-content: flex-start;
-    }
-
     .song-list {
         max-height: 200px;
     }
@@ -509,8 +501,12 @@ small {
 }
 
 /* 小屏幕进一步优化 */
-@media (max-width: 380px) {
+@media (max-width: 425px) {
     .player-controls .btn span {
+        display: none;
+    }
+
+    .text-muted {
         display: none;
     }
 

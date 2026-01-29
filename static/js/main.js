@@ -1307,4 +1307,20 @@ document.addEventListener('DOMContentLoaded', function () {
                 break;
         }
     });
+
+    function preventMobileZoom() {
+        // 阻止 Safari 的 gesturestart (防止双指缩放手势)
+        document.addEventListener('gesturestart', function (e) {
+            e.preventDefault();
+        });
+
+        // 阻止双击缩放
+        document.addEventListener('touchmove', function (event) {
+            if (event.touches.length > 1) {
+                event.preventDefault();
+            }
+        }, {passive: false}); // 必须设置为 postive: false 才能调用 preventDefault
+    }
+
+    preventMobileZoom();
 })
