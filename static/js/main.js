@@ -1298,12 +1298,63 @@ document.addEventListener('DOMContentLoaded', function () {
                 playPauseBtn.click()
                 break;
             case 'arrowleft':
+            case 'pageup':
                 event.preventDefault();
                 prevBtn.click()
                 break;
             case 'arrowright':
+            case 'pagedown':
                 event.preventDefault();
                 nextBtn.click()
+                break;
+            case 'r':
+            case 's':
+                event.preventDefault();
+                randomBtn.click()
+                break;
+            case 'l':
+                event.preventDefault();
+                loopBtn.click()
+                break;
+            case 'arrowup':
+                event.preventDefault();
+                if (pitchShiftSelect.selectedIndex < pitchShiftSelect.options.length - 1) {
+                    pitchShiftSelect.selectedIndex += 1;
+                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                }
+                break;
+            case 'arrowdown':
+                event.preventDefault();
+                if (pitchShiftSelect.selectedIndex > 0) {
+                    pitchShiftSelect.selectedIndex -= 1;
+                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                }
+                break;
+            case '+':
+            case '=':
+                event.preventDefault();
+                if (tempoShiftSelect.selectedIndex < tempoShiftSelect.options.length - 1) {
+                    tempoShiftSelect.selectedIndex += 1;
+                    tempoShiftSelect.dispatchEvent(new Event('change'));
+                }
+                break;
+            case '-':
+            case '_':
+                event.preventDefault();
+                if (tempoShiftSelect.selectedIndex > 0) {
+                    tempoShiftSelect.selectedIndex -= 1;
+                    tempoShiftSelect.dispatchEvent(new Event('change'));
+                }
+                break;
+            case 'escape':
+                event.preventDefault();
+                searchInput.value = '';
+                handleSearchInput();
+                scrollToActiveSong();
+                break;
+            case 'f':
+                event.preventDefault();
+                searchInput.focus();
                 break;
         }
     });

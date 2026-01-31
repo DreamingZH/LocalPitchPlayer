@@ -63,9 +63,16 @@ Includes a full suite of standard transport controls:
 
 ### ⌨️ Keyboard Shortcuts
 For quicker control, use your keyboard:
-*   **Space / Enter**: Toggle Play / Pause
-*   **Left Arrow (←)**: Play Previous Track
-*   **Right Arrow (→)**: Play Next Track
+*   **`Space` / `Enter`**: Toggle Play / Pause
+*   **`Left Arrow (←)` / `PageUp`**: Play Previous Track
+*   **`Right Arrow (→)` / `PageDown`**: Play Next Track
+*   **`Up Arrow (↑)`**: Increase Pitch
+*   **`Down Arrow (↓)`**: Decrease Pitch
+*   **`+` / `=`**: Increase Tempo
+*   **`-` / `_`**: Decrease Tempo
+*   **`L`**: Toggle Loop Mode
+*   **`S` / `R`**: Toggle Shuffle Mode
+*   **`escape`**: Clear Search Input and Reset Focus
 
 ### 📱 Responsive Design
 Features a modern, adaptive user interface that functions seamlessly across:
@@ -99,3 +106,6 @@ This project incorporates the [SoundTouchJS](https://github.com/cutterbl/SoundTo
 ## License
 
 This project is open-source and available under the [LGPL v2.1 License](LICENSE).
+
+## [Buy Me A Coffee](https://www.buymeacoffee.com/dreamingzh)
+If you find this project useful and would like to support its development, consider buying me a coffee! Your support helps keep the project alive and allows me to continue improving it. Thank you! ☕
