@@ -72,7 +72,8 @@ For quicker control, use your keyboard:
 *   **`-` / `_`**: Decrease Tempo
 *   **`L`**: Toggle Loop Mode
 *   **`S` / `R`**: Toggle Shuffle Mode
-*   **`escape`**: Clear Search Input and Reset Focus
+*   **`escape`**: Clear Search Input and Locate Current Track
+*   **`F`**: Focus Search Input and Locate Current Track
 
 ### 📱 Responsive Design
 Features a modern, adaptive user interface that functions seamlessly across:

@@ -1353,6 +1353,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 scrollToActiveSong();
                 break;
             case 'f':
+                scrollToActiveSong();
                 event.preventDefault();
                 searchInput.focus();
                 break;
