@@ -926,6 +926,32 @@ document.addEventListener('DOMContentLoaded', function () {
     let pitchShifter;
     let gainNode;
     let loadRequestId = 0;
+
+    // 初始化主题
+    function initTheme() {
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme) {
+            document.documentElement.setAttribute('data-theme', savedTheme);
+        }
+    }
+
+    // 切换主题
+    function toggleTheme() {
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        let newTheme;
+
+        if (currentTheme) {
+            newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+        } else {
+            // 如果没有手动设置过，则根据系统偏好取反
+            const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            newTheme = isSystemDark ? 'light' : 'dark';
+        }
+
+        document.documentElement.setAttribute('data-theme', newTheme);
+        localStorage.setItem('theme', newTheme);
+    }
+
     let play = function () {
         pitchShifter.connect(gainNode);
         gainNode.connect(audioContext.destination);
@@ -1284,9 +1310,14 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    initTheme();
     setupAudioPlayer();
 
     document.addEventListener('keydown', function (event) {
+        if (!event.key) {
+            return;
+        }
+
         const key = event.key.toLowerCase();
         if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
             return;
@@ -1357,6 +1388,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 scrollToActiveSong();
                 event.preventDefault();
                 searchInput.focus();
+                break;
+            case 't':
+                event.preventDefault();
+                toggleTheme();
                 break;
         }
     });

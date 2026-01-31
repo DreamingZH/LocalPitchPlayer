@@ -74,6 +74,7 @@ For quicker control, use your keyboard:
 *   **`S` / `R`**: Toggle Shuffle Mode
 *   **`escape`**: Clear Search Input and Locate Current Track
 *   **`F`**: Focus Search Input and Locate Current Track
+*   **`T`**: Toggle Dark/Light Theme
 
 ### 📱 Responsive Design
 Features a modern, adaptive user interface that functions seamlessly across:

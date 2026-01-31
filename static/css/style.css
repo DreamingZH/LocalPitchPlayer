@@ -15,9 +15,26 @@
     --shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.12);
 }
 
-/* 深色主题 */
+/* 深色主题变量定义 - 供类名强制调用 */
+:root[data-theme="dark"] {
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: rgba(30, 41, 59, 0.9);
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --text-muted: #64748b;
+    --accent: #60a5fa;
+    --accent-light: rgba(96, 165, 250, 0.1);
+    --accent-medium: rgba(96, 165, 250, 0.2);
+    --accent-hover: rgba(96, 165, 250, 0.3);
+    --border: rgba(255, 255, 255, 0.08);
+    --shadow: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --shadow-hover: 0 8px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 深色主题 - 系统偏好 (如果没有手动设置 light) */
 @media (prefers-color-scheme: dark) {
-    :root {
+    :root:not([data-theme="light"]) {
         --bg-primary: #0f172a;
         --bg-secondary: #1e293b;
         --bg-tertiary: rgba(30, 41, 59, 0.9);
@@ -52,6 +69,7 @@ body {
     padding: 16px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.2s ease, color 0.2s ease;
 }
 
 /* 主容器 */
@@ -65,6 +83,7 @@ body {
     animation: fadeIn 0.4s ease-out;
     border: 1px solid var(--border);
     position: relative;
+    transition: background-color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 @keyframes fadeIn {
@@ -125,6 +144,7 @@ h1#player-title {
     text-overflow: ellipsis;
     white-space: nowrap;
     padding: 0 40px; /* 为语言按钮留出空间 */
+    transition: color 0.2s ease;
 }
 
 /* 文件选择区域 */
