@@ -1291,6 +1291,9 @@ document.addEventListener('DOMContentLoaded', function () {
         if (event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) {
             return;
         }
+        if (document.activeElement === searchInput && key !== 'escape') {
+            return;
+        }
         switch (key) {
             case ' ':
             case 'enter':
@@ -1298,14 +1301,26 @@ document.addEventListener('DOMContentLoaded', function () {
                 playPauseBtn.click()
                 break;
             case 'arrowleft':
-            case 'pageup':
                 event.preventDefault();
                 prevBtn.click()
                 break;
+            case 'pageup':
+                event.preventDefault();
+                if (pitchShiftSelect.selectedIndex < pitchShiftSelect.options.length - 1) {
+                    pitchShiftSelect.selectedIndex += 1;
+                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                }
+                break;
             case 'arrowright':
-            case 'pagedown':
                 event.preventDefault();
                 nextBtn.click()
+                break;
+            case 'pagedown':
+                event.preventDefault();
+                if (pitchShiftSelect.selectedIndex > 0) {
+                    pitchShiftSelect.selectedIndex -= 1;
+                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                }
                 break;
             case 'r':
             case 's':
@@ -1315,20 +1330,6 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'l':
                 event.preventDefault();
                 loopBtn.click()
-                break;
-            case 'arrowup':
-                event.preventDefault();
-                if (pitchShiftSelect.selectedIndex < pitchShiftSelect.options.length - 1) {
-                    pitchShiftSelect.selectedIndex += 1;
-                    pitchShiftSelect.dispatchEvent(new Event('change'));
-                }
-                break;
-            case 'arrowdown':
-                event.preventDefault();
-                if (pitchShiftSelect.selectedIndex > 0) {
-                    pitchShiftSelect.selectedIndex -= 1;
-                    pitchShiftSelect.dispatchEvent(new Event('change'));
-                }
                 break;
             case '+':
             case '=':

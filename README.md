@@ -64,10 +64,10 @@ Includes a full suite of standard transport controls:
 ### ⌨️ Keyboard Shortcuts
 For quicker control, use your keyboard:
 *   **`Space` / `Enter`**: Toggle Play / Pause
-*   **`Left Arrow (←)` / `PageUp`**: Play Previous Track
-*   **`Right Arrow (→)` / `PageDown`**: Play Next Track
-*   **`Up Arrow (↑)`**: Increase Pitch
-*   **`Down Arrow (↓)`**: Decrease Pitch
+*   **`Left Arrow (←)`**: Play Previous Track
+*   **`Right Arrow (→)`**: Play Next Track
+*   **`PageUp`**: Increase Pitch
+*   **`PageDown`**: Decrease Pitch
 *   **`+` / `=`**: Increase Tempo
 *   **`-` / `_`**: Decrease Tempo
 *   **`L`**: Toggle Loop Mode
