@@ -1206,6 +1206,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 play()
 
                 updateTitle(song.name);
+                updatePageIcon(song.file); // 新增：更新网页图标
                 scrollToActiveSong();
 
                 const songItems = songList.querySelectorAll('.song-item');
@@ -1291,7 +1292,44 @@ document.addEventListener('DOMContentLoaded', function () {
         document.title = songName;
     }
 
-// 滚动到活动歌曲
+    // 更新网页图标
+    function updatePageIcon(file) {
+        if (typeof window.jsmediatags === 'undefined') return;
+
+        window.jsmediatags.read(file, {
+            onSuccess: function (tag) {
+                const { picture } = tag.tags;
+                if (picture) {
+                    let base64String = "";
+                    for (let i = 0; i < picture.data.length; i++) {
+                        base64String += String.fromCharCode(picture.data[i]);
+                    }
+                    const base64 = "data:" + picture.format + ";base64," + window.btoa(base64String);
+                    setAllIcons(base64);
+                } else {
+                    resetIcons();
+                }
+            },
+            onError: function (error) {
+                resetIcons();
+            }
+        });
+    }
+
+    function setAllIcons(href) {
+        const links = document.querySelectorAll("link[rel*='icon']");
+        links.forEach(link => link.href = href);
+    }
+
+    function resetIcons() {
+        const links = document.querySelectorAll("link[rel*='icon']");
+        links.forEach(link => {
+            // 恢复默认图标
+            link.href = "./static/img/icon/favicon-32x32.png";
+        });
+    }
+
+    // 滚动到活动歌曲
     function scrollToActiveSong() {
         const songItems = songList.querySelectorAll('.song-item');
         const activeSong = songItems[currentSongIndex];
