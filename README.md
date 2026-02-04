@@ -39,7 +39,7 @@ If you are a developer and wish to modify the code or run it strictly offline:
 2. **Run the application**:
    Simply open the `index.html` file in a modern web browser (Chrome, Firefox, Edge, or Safari).
 
-   > **Note**: Due to browser security policies regarding CORS (Cross-Origin Resource Sharing), some advanced features might require serving the directory via a local HTTP server (e.g., Live Server in VS Code, `python -m http.server`, etc.) rather than opening the file directly via the `file://` protocol.
+   > **Note**: Due to browser security policies regarding CORS (Cross-Origin Resource Sharing), some advanced features might require serving the directory via a local HTTP server (e.g., Live Server in VS Code, `python -m http.server`, etc.) rather than opening the file directly via the `file://` protocol. You can use the `./server.py` script to quickly start a local server if you have Python installed.
 
 ---
 
@@ -105,9 +105,13 @@ This application relies on the modern **Web Audio API**. It is compatible with t
 
 This project incorporates the [SoundTouchJS](https://github.com/cutterbl/SoundTouchJS) library for high-quality audio time-stretching and pitch-shifting processing.
 
+---
+
 ## License
 
 This project is open-source and available under the [LGPL v2.1 License](LICENSE).
+
+---
 
 ## [Buy Me A Coffee](https://www.buymeacoffee.com/dreamingzh)
 If you find this project useful and would like to support its development, consider buying me a coffee! Your support helps keep the project alive and allows me to continue improving it. Thank you! ☕
