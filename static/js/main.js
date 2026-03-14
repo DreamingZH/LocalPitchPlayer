@@ -1288,8 +1288,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 更新标题
     function updateTitle(songName) {
-        playerTitle.textContent = songName;
-        document.title = songName;
+        const nameWithoutExt = songName.replace(/\.[^/.]+$/, "");
+        playerTitle.textContent = nameWithoutExt;
+        document.title = nameWithoutExt;
     }
 
     // 更新网页图标
@@ -1370,6 +1371,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 playPauseBtn.click()
                 break;
             case 'arrowleft':
+                // backwards 10 seconds
+                if (pitchShifter) {
+                    event.preventDefault();
+                    pitchShifter.percentagePlayed = Math.max(0, (currentSeek - 10) / pitchShifter.duration);
+                }
+                break;
+            case 'arrowup':
                 event.preventDefault();
                 prevBtn.click()
                 break;
@@ -1381,6 +1389,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 break;
             case 'arrowright':
+                // forward 10 seconds
+                if (pitchShifter) {
+                    event.preventDefault();
+                    pitchShifter.percentagePlayed = Math.min(0.999, (currentSeek + 10) / pitchShifter.duration);
+                }
+                break;
+            case 'arrowdown':
                 event.preventDefault();
                 nextBtn.click()
                 break;
