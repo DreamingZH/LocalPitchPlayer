@@ -923,6 +923,11 @@ document.addEventListener('DOMContentLoaded', function () {
     let currentPitchShift = 0;
     let currentTempoShift = 1;
     let audioContext = new window.AudioContext(); // 只创建一次 AudioContext
+    let analyserNode = audioContext.createAnalyser();
+    analyserNode.fftSize = 256;
+    let visualizerCanvas = document.getElementById('visualizer');
+    let visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
+    let visualizerAnimationFrame;
     let pitchShifter;
     let gainNode;
     let loadRequestId = 0;
@@ -954,13 +959,83 @@ document.addEventListener('DOMContentLoaded', function () {
 
     let play = function () {
         pitchShifter.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(analyserNode);
+        analyserNode.connect(audioContext.destination);
         audioContext.resume().then(() => {
             isPlaying = true;
             playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span data-i18n="pause">暂停</span>';
             i18n.updatePageTexts();
+            if(!visualizerAnimationFrame) {
+                drawVisualizer();
+            }
         });
     };
+
+    function drawVisualizer() {
+        if (!visualizerCanvas || !visualizerCtx) return;
+        visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
+
+        const width = visualizerCanvas.clientWidth;
+        const height = visualizerCanvas.clientHeight;
+        if (visualizerCanvas.width !== width || visualizerCanvas.height !== height) {
+            visualizerCanvas.width = width;
+            visualizerCanvas.height = height;
+        }
+
+        const bufferLength = analyserNode.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+        analyserNode.getByteFrequencyData(dataArray);
+
+        visualizerCtx.clearRect(0, 0, width, height);
+
+        const currentTheme = document.documentElement.getAttribute('data-theme');
+        const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
+
+        // 使用更融入背景的颜色 (配合透明度使用)
+        const baseColor = isDark ? '255, 255, 255' : '100, 116, 139';
+
+        const sliceWidth = width * 1.0 / bufferLength;
+        let points = [];
+
+        // 收集平滑曲线的点，减少高度拉伸
+        for (let i = 0; i < bufferLength; i++) {
+            const v = dataArray[i] / 255.0;
+            const y = height - (v * height * 0.65);
+            points.push({ x: i * sliceWidth, y: y });
+        }
+
+        visualizerCtx.beginPath();
+        visualizerCtx.moveTo(0, height);
+
+        if (points.length > 0) {
+            visualizerCtx.lineTo(0, points[0].y);
+
+            for (let i = 0; i < points.length - 1; i++) {
+                const xc = (points[i].x + points[i + 1].x) / 2;
+                const yc = (points[i].y + points[i + 1].y) / 2;
+                visualizerCtx.quadraticCurveTo(points[i].x, points[i].y, xc, yc);
+            }
+
+            const lastP = points[points.length - 1];
+            visualizerCtx.lineTo(lastP.x, lastP.y);
+            visualizerCtx.lineTo(width, height);
+        }
+        visualizerCtx.closePath();
+
+        // 填充背景渐变
+        const gradient = visualizerCtx.createLinearGradient(0, 0, 0, height);
+        gradient.addColorStop(0, `rgba(${baseColor}, 0.15)`);
+        gradient.addColorStop(1, `rgba(${baseColor}, 0.0)`);
+
+        visualizerCtx.fillStyle = gradient;
+        visualizerCtx.fill();
+
+        // 绘制顶部流畅曲线
+        visualizerCtx.strokeStyle = `rgba(${baseColor}, 0.3)`;
+        visualizerCtx.lineWidth = 1.5;
+        visualizerCtx.stroke();
+    }
 
 // 初始化音频播放器
     function setupAudioPlayer() {
