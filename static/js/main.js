@@ -968,6 +968,9 @@ document.addEventListener('DOMContentLoaded', function () {
             if(!visualizerAnimationFrame) {
                 drawVisualizer();
             }
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'playing';
+            }
         });
     };
 
@@ -1077,6 +1080,13 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
         searchInput.addEventListener('input', handleSearchInput);
+
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) resumeSong(); });
+            navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) pauseSong(); });
+            navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
+            navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+        }
     }
 
     function handleDragOver(e) {
@@ -1281,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 play()
 
                 updateTitle(song.name);
-                updatePageIcon(song.file); // 新增：更新网页图标
+                updatePageIcon(song.file, song.name); // 新增：更新网页图标及媒体会话信息
                 scrollToActiveSong();
 
                 const songItems = songList.querySelectorAll('.song-item');
@@ -1304,6 +1314,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 isPlaying = false;
                 playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span data-i18n="play">播放</span>';
                 i18n.updatePageTexts();
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.playbackState = 'paused';
+                }
             });
         }
     }
@@ -1368,9 +1381,16 @@ document.addEventListener('DOMContentLoaded', function () {
         document.title = nameWithoutExt;
     }
 
-    // 更新网页图标
-    function updatePageIcon(file) {
-        if (typeof window.jsmediatags === 'undefined') return;
+    // 更新网页图标及媒体元数据
+    function updatePageIcon(file, songName) {
+        const title = songName ? songName.replace(/\.[^/.]+$/, "") : "Unknown Title";
+
+        if (typeof window.jsmediatags === 'undefined') {
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = new MediaMetadata({ title: title });
+            }
+            return;
+        }
 
         window.jsmediatags.read(file, {
             onSuccess: function (tag) {
@@ -1381,6 +1401,17 @@ document.addEventListener('DOMContentLoaded', function () {
                         base64String += String.fromCharCode(picture.data[i]);
                     }
                     const base64 = "data:" + picture.format + ";base64," + window.btoa(base64String);
+
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.metadata = new MediaMetadata({
+                            title: tag.tags.title || title,
+                            artist: tag.tags.artist || 'Unknown Artist',
+                            album: tag.tags.album || 'Unknown Album',
+                            artwork: [
+                                { src: base64, sizes: '512x512', type: picture.format || 'image/png' }
+                            ]
+                        });
+                    }
 
                     const img = new Image();
                     img.onload = function() {
@@ -1410,10 +1441,20 @@ document.addEventListener('DOMContentLoaded', function () {
                     img.src = base64;
                 } else {
                     resetIcons();
+                    if ('mediaSession' in navigator) {
+                        navigator.mediaSession.metadata = new MediaMetadata({
+                            title: tag.tags.title || title,
+                            artist: tag.tags.artist || 'Unknown Artist',
+                            album: tag.tags.album || 'Unknown Album'
+                        });
+                    }
                 }
             },
             onError: function (error) {
                 resetIcons();
+                if ('mediaSession' in navigator) {
+                    navigator.mediaSession.metadata = new MediaMetadata({ title: title });
+                }
             }
         });
     }
