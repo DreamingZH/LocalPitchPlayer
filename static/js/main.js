@@ -1306,7 +1306,33 @@ document.addEventListener('DOMContentLoaded', function () {
                         base64String += String.fromCharCode(picture.data[i]);
                     }
                     const base64 = "data:" + picture.format + ";base64," + window.btoa(base64String);
-                    setAllIcons(base64);
+
+                    const img = new Image();
+                    img.onload = function() {
+                        const canvas = document.createElement('canvas');
+                        const ctx = canvas.getContext('2d');
+                        const size = 64;
+                        const radius = 16;
+                        canvas.width = size;
+                        canvas.height = size;
+
+                        ctx.beginPath();
+                        ctx.moveTo(radius, 0);
+                        ctx.lineTo(size - radius, 0);
+                        ctx.quadraticCurveTo(size, 0, size, radius);
+                        ctx.lineTo(size, size - radius);
+                        ctx.quadraticCurveTo(size, size, size - radius, size);
+                        ctx.lineTo(radius, size);
+                        ctx.quadraticCurveTo(0, size, 0, size - radius);
+                        ctx.lineTo(0, radius);
+                        ctx.quadraticCurveTo(0, 0, radius, 0);
+                        ctx.closePath();
+                        ctx.clip();
+
+                        ctx.drawImage(img, 0, 0, size, size);
+                        setAllIcons(canvas.toDataURL('image/png'));
+                    };
+                    img.src = base64;
                 } else {
                     resetIcons();
                 }
