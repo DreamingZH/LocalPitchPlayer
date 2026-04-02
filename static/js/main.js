@@ -1576,6 +1576,7 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'escape':
                 event.preventDefault();
                 searchInput.value = '';
+                searchInput.blur();
                 handleSearchInput();
                 scrollToActiveSong();
                 break;
