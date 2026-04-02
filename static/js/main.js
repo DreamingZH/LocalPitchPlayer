@@ -931,7 +931,12 @@ document.addEventListener('DOMContentLoaded', function () {
     let pitchShifter;
     let gainNode;
     let loadRequestId = 0;
-    let currentAlbumColor = null; // 专辑封面的主题色
+    let currentAlbumColor = null; // null或 "r, g, b"
+    let currentDisplayColor = null; // 经过当前明暗主题优化后的展示色
+    let activeThemeIndex = 1;     // 用于在主题渐变伪元素之间切换 (1 或 2)
+
+    // 修改前保留此备用色值记录，以便不匹配时使用
+    document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
 
     // 更新界面背景渐变
     function updateThemeBackground() {
@@ -941,29 +946,78 @@ document.addEventListener('DOMContentLoaded', function () {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
             const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
-            
+
+            // 根据当前主题动态优化颜色，确保充足对比度并且不至于在深色下太刺眼或发黑
+            let [r, g, b] = currentAlbumColor.split(',').map(n => parseInt(n.trim(), 10));
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+
+            if (isDark && luminance < 100) {
+                // 深色模式下提亮过暗的主题色
+                if (luminance < 5) {
+                    r = g = b = 100;
+                } else {
+                    const factor = 100 / luminance;
+                    r = Math.min(255, Math.floor(r * factor));
+                    g = Math.min(255, Math.floor(g * factor));
+                    b = Math.min(255, Math.floor(b * factor));
+                }
+            } else if (!isDark && luminance > 170) {
+                // 浅色模式下压暗过亮的主题色
+                const factor = 170 / luminance;
+                r = Math.max(0, Math.floor(r * factor));
+                g = Math.max(0, Math.floor(g * factor));
+                b = Math.max(0, Math.floor(b * factor));
+            }
+
+            currentDisplayColor = `${r}, ${g}, ${b}`;
+
             const startOpacity = isDark ? 0.8 : 0.5;
-            document.body.style.background = `linear-gradient(135deg, rgba(${currentAlbumColor}, ${startOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentAlbumColor}, ${startOpacity}) 0%, transparent 70%), var(--bg-primary)`;
-            document.body.style.backgroundAttachment = 'fixed';
+            const containerOpacity = isDark ? 0.3 : 0.15;
+
+            // 切换激活的主题层
+            const newIndex = activeThemeIndex === 1 ? 2 : 1;
+
+            // 直接拼接生成完整的 linear-gradient 背景，避免在 rgba() 内写 CSS 变量可能产生的解析问题
+            const bodyBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, transparent 70%)`;
+            const containerBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${containerOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentDisplayColor}, ${containerOpacity}) 0%, transparent 70%)`;
+            const progressBg = `linear-gradient(90deg, rgba(${currentDisplayColor}, 0.6) 0%, rgba(${currentDisplayColor}, 1) 100%)`;
+
+            document.documentElement.style.setProperty(`--theme-bg-layer-${newIndex}`, bodyBg);
+            document.documentElement.style.setProperty(`--theme-container-bg-layer-${newIndex}`, containerBg);
+            document.documentElement.style.setProperty(`--theme-progress-bg-layer-${newIndex}`, progressBg);
+            document.documentElement.style.setProperty('--theme-color-rgb-current', currentDisplayColor);
+
+            document.documentElement.style.setProperty('--accent', `rgb(${currentDisplayColor})`);
+            document.documentElement.style.setProperty('--accent-light', `rgba(${currentDisplayColor}, 0.1)`);
+            document.documentElement.style.setProperty('--accent-medium', `rgba(${currentDisplayColor}, 0.2)`);
+            document.documentElement.style.setProperty('--accent-hover', `rgba(${currentDisplayColor}, 0.3)`);
+
+            // 切换 Class 触发渐变
+            document.body.classList.remove(`theme-bg-${activeThemeIndex}`);
+            document.body.classList.add(`theme-bg-${newIndex}`);
 
             if (container) {
-                const containerOpacity = isDark ? 0.3 : 0.15;
-                container.style.background = `linear-gradient(135deg, rgba(${currentAlbumColor}, ${containerOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentAlbumColor}, ${containerOpacity}) 0%, transparent 70%), var(--bg-secondary)`;
-                container.style.borderColor = `rgba(${currentAlbumColor}, 0.3)`;
+                container.classList.remove(`theme-bg-${activeThemeIndex}`);
+                container.classList.add(`theme-bg-${newIndex}`);
+            }
+            if (progressBar) {
+                progressBar.classList.remove(`theme-bg-${activeThemeIndex}`);
+                progressBar.classList.add(`theme-bg-${newIndex}`);
             }
 
-            if (progressBar) {
-                progressBar.style.background = `linear-gradient(90deg, rgba(${currentAlbumColor}, 0.6) 0%, rgba(${currentAlbumColor}, 1) 100%)`;
-            }
+            activeThemeIndex = newIndex;
+
         } else {
-            document.body.style.background = '';
-            if (container) {
-                container.style.background = '';
-                container.style.borderColor = '';
-            }
-            if (progressBar) {
-                progressBar.style.background = '';
-            }
+            document.body.classList.remove('theme-bg-1', 'theme-bg-2');
+            if (container) container.classList.remove('theme-bg-1', 'theme-bg-2');
+            if (progressBar) progressBar.classList.remove('theme-bg-1', 'theme-bg-2');
+            document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
+            currentDisplayColor = null;
+
+            document.documentElement.style.removeProperty('--accent');
+            document.documentElement.style.removeProperty('--accent-light');
+            document.documentElement.style.removeProperty('--accent-medium');
+            document.documentElement.style.removeProperty('--accent-hover');
         }
     }
 
@@ -1036,7 +1090,7 @@ document.addEventListener('DOMContentLoaded', function () {
             isPlaying = true;
             playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span data-i18n="pause">暂停</span>';
             i18n.updatePageTexts();
-            if(!visualizerAnimationFrame) {
+            if (!visualizerAnimationFrame) {
                 drawVisualizer();
             }
             if ('mediaSession' in navigator) {
@@ -1067,7 +1121,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
 
         // 使用专辑封面色或融入背景的颜色 (配合透明度使用)
-        const baseColor = currentAlbumColor ? currentAlbumColor : (isDark ? '255, 255, 255' : '100, 116, 139');
+        const baseColor = currentDisplayColor ? currentDisplayColor : (isDark ? '255, 255, 255' : '100, 116, 139');
 
         const sliceWidth = width * 1.0 / bufferLength;
         let points = [];
@@ -1076,7 +1130,7 @@ document.addEventListener('DOMContentLoaded', function () {
         for (let i = 0; i < bufferLength; i++) {
             const v = dataArray[i] / 255.0;
             const y = height - (v * height * 0.65);
-            points.push({ x: i * sliceWidth, y: y });
+            points.push({x: i * sliceWidth, y: y});
         }
 
         visualizerCtx.beginPath();
@@ -1153,8 +1207,12 @@ document.addEventListener('DOMContentLoaded', function () {
         searchInput.addEventListener('input', handleSearchInput);
 
         if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => { if (!isPlaying) resumeSong(); });
-            navigator.mediaSession.setActionHandler('pause', () => { if (isPlaying) pauseSong(); });
+            navigator.mediaSession.setActionHandler('play', () => {
+                if (!isPlaying) resumeSong();
+            });
+            navigator.mediaSession.setActionHandler('pause', () => {
+                if (isPlaying) pauseSong();
+            });
             navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
             navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
         }
@@ -1439,7 +1497,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 更新进度条
     function updateProgress(currentTime, duration) {
-        if (isPlaying || currentTime === 0) { // 允许在停止时重置为0
+        if (isPlaying || currentTime === 0) // 允许在停止时重置为0
+        {
             const progress = (currentTime / duration) * 100;
             progressBar.style.width = `${progress}%`;
         }
@@ -1458,14 +1517,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (typeof window.jsmediatags === 'undefined') {
             if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({ title: title });
+                navigator.mediaSession.metadata = new MediaMetadata({title: title});
             }
             return;
         }
 
         window.jsmediatags.read(file, {
             onSuccess: function (tag) {
-                const { picture } = tag.tags;
+                const {picture} = tag.tags;
                 if (picture) {
                     let base64String = "";
                     for (let i = 0; i < picture.data.length; i++) {
@@ -1479,13 +1538,13 @@ document.addEventListener('DOMContentLoaded', function () {
                             artist: tag.tags.artist || 'Unknown Artist',
                             album: tag.tags.album || 'Unknown Album',
                             artwork: [
-                                { src: base64, sizes: '512x512', type: picture.format || 'image/png' }
+                                {src: base64, sizes: '512x512', type: picture.format || 'image/png'}
                             ]
                         });
                     }
 
                     const img = new Image();
-                    img.onload = function() {
+                    img.onload = function () {
                         currentAlbumColor = getAverageColor(img);
                         updateThemeBackground();
 
@@ -1531,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 updateThemeBackground();
                 resetIcons();
                 if ('mediaSession' in navigator) {
-                    navigator.mediaSession.metadata = new MediaMetadata({ title: title });
+                    navigator.mediaSession.metadata = new MediaMetadata({title: title});
                 }
             }
         });
