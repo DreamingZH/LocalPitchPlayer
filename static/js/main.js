@@ -931,6 +931,76 @@ document.addEventListener('DOMContentLoaded', function () {
     let pitchShifter;
     let gainNode;
     let loadRequestId = 0;
+    let currentAlbumColor = null; // 专辑封面的主题色
+
+    // 更新界面背景渐变
+    function updateThemeBackground() {
+        const container = document.querySelector('.audio-player-container');
+        const progressBar = document.getElementById('progress-bar');
+        if (currentAlbumColor) {
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
+            
+            const startOpacity = isDark ? 0.8 : 0.5;
+            document.body.style.background = `linear-gradient(135deg, rgba(${currentAlbumColor}, ${startOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentAlbumColor}, ${startOpacity}) 0%, transparent 70%), var(--bg-primary)`;
+            document.body.style.backgroundAttachment = 'fixed';
+
+            if (container) {
+                const containerOpacity = isDark ? 0.3 : 0.15;
+                container.style.background = `linear-gradient(135deg, rgba(${currentAlbumColor}, ${containerOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentAlbumColor}, ${containerOpacity}) 0%, transparent 70%), var(--bg-secondary)`;
+                container.style.borderColor = `rgba(${currentAlbumColor}, 0.3)`;
+            }
+
+            if (progressBar) {
+                progressBar.style.background = `linear-gradient(90deg, rgba(${currentAlbumColor}, 0.6) 0%, rgba(${currentAlbumColor}, 1) 100%)`;
+            }
+        } else {
+            document.body.style.background = '';
+            if (container) {
+                container.style.background = '';
+                container.style.borderColor = '';
+            }
+            if (progressBar) {
+                progressBar.style.background = '';
+            }
+        }
+    }
+
+    // 提取图片的主题色
+    function getAverageColor(imgElement) {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d');
+        canvas.width = imgElement.width || imgElement.naturalWidth || 64;
+        canvas.height = imgElement.height || imgElement.naturalHeight || 64;
+
+        if (canvas.width === 0 || canvas.height === 0) return null;
+
+        ctx.drawImage(imgElement, 0, 0, canvas.width, canvas.height);
+        try {
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const data = imageData.data;
+            let r = 0, g = 0, b = 0, count = 0;
+
+            for (let i = 0; i < data.length; i += 16) {
+                if (data[i + 3] > 128) { // 忽略透明度高的像素
+                    r += data[i];
+                    g += data[i + 1];
+                    b += data[i + 2];
+                    count++;
+                }
+            }
+            if (count > 0) {
+                r = Math.floor(r / count);
+                g = Math.floor(g / count);
+                b = Math.floor(b / count);
+                return `${r}, ${g}, ${b}`;
+            }
+        } catch (e) {
+            console.error(e);
+        }
+        return null;
+    }
 
     // 初始化主题
     function initTheme() {
@@ -955,6 +1025,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         document.documentElement.setAttribute('data-theme', newTheme);
         localStorage.setItem('theme', newTheme);
+        updateThemeBackground();
     }
 
     let play = function () {
@@ -995,8 +1066,8 @@ document.addEventListener('DOMContentLoaded', function () {
         const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
         const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
 
-        // 使用更融入背景的颜色 (配合透明度使用)
-        const baseColor = isDark ? '255, 255, 255' : '100, 116, 139';
+        // 使用专辑封面色或融入背景的颜色 (配合透明度使用)
+        const baseColor = currentAlbumColor ? currentAlbumColor : (isDark ? '255, 255, 255' : '100, 116, 139');
 
         const sliceWidth = width * 1.0 / bufferLength;
         let points = [];
@@ -1415,6 +1486,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     const img = new Image();
                     img.onload = function() {
+                        currentAlbumColor = getAverageColor(img);
+                        updateThemeBackground();
+
                         const canvas = document.createElement('canvas');
                         const ctx = canvas.getContext('2d');
                         const size = 64;
@@ -1440,6 +1514,8 @@ document.addEventListener('DOMContentLoaded', function () {
                     };
                     img.src = base64;
                 } else {
+                    currentAlbumColor = null;
+                    updateThemeBackground();
                     resetIcons();
                     if ('mediaSession' in navigator) {
                         navigator.mediaSession.metadata = new MediaMetadata({
@@ -1451,6 +1527,8 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             },
             onError: function (error) {
+                currentAlbumColor = null;
+                updateThemeBackground();
                 resetIcons();
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.metadata = new MediaMetadata({ title: title });
