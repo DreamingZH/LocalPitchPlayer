@@ -179,6 +179,7 @@ body.theme-bg-2::after {
     gap: 4px;
     z-index: 10;
     -webkit-tap-highlight-color: transparent;
+    outline: none;
 }
 
 .lang-toggle:hover {
@@ -237,6 +238,7 @@ h1#player-title {
     white-space: nowrap;
     user-select: none;
     -webkit-tap-highlight-color: transparent;
+    outline: none;
 }
 
 .btn-style:hover,
