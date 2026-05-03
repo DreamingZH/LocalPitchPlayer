@@ -26,6 +26,17 @@
     <link rel="icon" type="image/png" sizes="32x32" href="./static/img/icon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="./static/img/icon/favicon-16x16.png">
     <link rel="manifest" href="./static/img/icon/site.webmanifest">
+    <style>
+        /* 让整个页面的背景区域都变成可以拖拽窗口的区域 */
+        html, body {
+            -webkit-app-region: drag;
+        }
+
+        /* 但是主应用盒子内部的内容必须排除拖拽，否则鼠标点不中里面任何东西 */
+        .audio-player-container {
+            -webkit-app-region: no-drag;
+        }
+    </style>
 </head>
 
 <body>

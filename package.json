@@ -1,0 +1,41 @@
+{
+  "name": "localpitchplayer",
+  "version": "1.0.0",
+  "description": "Local Pitch Player App",
+  "main": "electron-main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win --x64"
+  },
+  "build": {
+    "appId": "com.dreamingzh.localpitchplayer",
+    "productName": "Local Pitch Player",
+    "win": {
+      "target": [
+        "nsis",
+        "appx"
+      ],
+      "icon": "static/img/icon/android-chrome-512x512.png"
+    },
+    "appx": {
+      "publisher": "CN=YourPublisherName",
+      "identityName": "LocalPitchPlayer"
+    }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/DreamingZH/LocalPitchPlayer.git"
+  },
+  "keywords": [],
+  "author": "DreamingZH",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/DreamingZH/LocalPitchPlayer/issues"
+  },
+  "homepage": "https://github.com/DreamingZH/LocalPitchPlayer#readme",
+  "devDependencies": {
+    "electron": "^41.5.0",
+    "electron-builder": "^26.8.1"
+  }
+}

@@ -1599,6 +1599,14 @@ document.addEventListener('DOMContentLoaded', function () {
     function setAllIcons(href) {
         const links = document.querySelectorAll("link[rel*='icon']");
         links.forEach(link => link.href = href);
+        
+        // 传递给 Electron 主进程更新应用/任务栏图标
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('update-icon', href);
+            } catch(e) {}
+        }
     }
 
     function resetIcons() {
@@ -1607,6 +1615,14 @@ document.addEventListener('DOMContentLoaded', function () {
             // 恢复默认图标
             link.href = "./static/img/icon/favicon-32x32.png";
         });
+        
+        // 传递给 Electron 主进程恢复默认图标
+        if (window.require) {
+            try {
+                const { ipcRenderer } = window.require('electron');
+                ipcRenderer.send('update-icon', null);
+            } catch(e) {}
+        }
     }
 
     // 滚动到活动歌曲
