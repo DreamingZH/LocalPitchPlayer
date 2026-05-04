@@ -25,8 +25,8 @@
       "icon": "LocalPitchPlayer.png"
     },
     "appx": {
-      "publisher": "CN=YourPublisherName",
-      "identityName": "LocalPitchPlayer"
+      "publisher": "CN=835067E0-AEF3-4EA6-8BDC-F991C7DA35CC",
+      "identityName": "DreamingZH.LocalPitchPlayer"
     }
   },
   "repository": {
