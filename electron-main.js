@@ -15,7 +15,7 @@ function createWindow() {
             symbolColor: '#7a8599',
             height: 32
         },
-        icon: path.join(__dirname, 'static/img/icon/android-chrome-512x512.png'),
+        icon: path.join(__dirname, 'LocalPitchPlayer.png'),
         autoHideMenuBar: true // 自动隐藏顶部菜单栏
     });
 
@@ -30,7 +30,7 @@ function createWindow() {
             const image = nativeImage.createFromDataURL(dataUrl);
             win.setIcon(image);
         } else {
-            win.setIcon(path.join(__dirname, 'static/img/icon/android-chrome-512x512.png'));
+            win.setIcon(path.join(__dirname, 'LocalPitchPlayer.png'));
         }
     });
 

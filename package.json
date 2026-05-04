@@ -15,14 +15,14 @@
         "dmg",
         "zip"
       ],
-      "icon": "static/img/icon/android-chrome-512x512.png"
+      "icon": "LocalPitchPlayer.png"
     },
     "win": {
       "target": [
         "nsis",
         "appx"
       ],
-      "icon": "static/img/icon/android-chrome-512x512.png"
+      "icon": "LocalPitchPlayer.png"
     },
     "appx": {
       "publisher": "CN=YourPublisherName",
