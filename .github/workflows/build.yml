@@ -39,20 +39,30 @@ jobs:
         GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npx electron-builder --mac --x64 --arm64
 
-    - name: Upload App Artifacts (Windows)
+    - name: Upload Windows EXE
       if: matrix.os == 'windows-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: LocalPitchPlayer-Windows
-        path: |
-          dist/*.exe
-          dist/*.appx
+        name: LocalPitchPlayer-Windows-exe
+        path: dist/*.exe
 
-    - name: Upload App Artifacts (macOS)
+    - name: Upload Windows APPX
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: LocalPitchPlayer-Windows-appx
+        path: dist/*.appx
+
+    - name: Upload macOS DMG
       if: matrix.os == 'macos-latest'
       uses: actions/upload-artifact@v4
       with:
-        name: LocalPitchPlayer-macOS
-        path: |
-          dist/*.dmg
-          dist/*.zip
+        name: LocalPitchPlayer-macOS-dmg
+        path: dist/*.dmg
+
+    - name: Upload macOS ZIP
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: LocalPitchPlayer-macOS-zip
+        path: dist/*.zip
