@@ -660,6 +660,29 @@ small {
     }
 }
 
+/* 纵向高度分级适配：空间有限时先缩小，再不够再隐藏 */
+@media (max-height: 700px) {
+    .drag-drop-zone {
+        min-height: 60px;
+        padding: 10px;
+        margin: 8px 0;
+    }
+    .drag-drop-zone p {
+        margin: 0;
+        font-size: 0.8rem;
+    }
+    .drag-drop-zone .hint {
+        display: none; /* 空间不足时隐藏副标题说明 */
+    }
+}
+
+/* 高度极小时隐藏拖拽区域 */
+@media (max-height: 550px) {
+    .drag-drop-zone {
+        display: none !important;
+    }
+}
+
 /* 无障碍：减少动画 */
 @media (prefers-reduced-motion: reduce) {
     * {

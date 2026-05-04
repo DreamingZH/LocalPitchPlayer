@@ -1,0 +1,54 @@
+name: Build Electron App
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Build Electron app (Windows)
+      if: matrix.os == 'windows-latest'
+      run: npx electron-builder --win --x64
+
+    - name: Build Electron app (macOS)
+      if: matrix.os == 'macos-latest'
+      run: npx electron-builder --mac --x64 --arm64
+
+    - name: Upload App Artifacts (Windows)
+      if: matrix.os == 'windows-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: LocalPitchPlayer-Windows
+        path: |
+          dist/*.exe
+          dist/*.appx
+
+    - name: Upload App Artifacts (macOS)
+      if: matrix.os == 'macos-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: LocalPitchPlayer-macOS
+        path: |
+          dist/*.dmg
+          dist/*.zip

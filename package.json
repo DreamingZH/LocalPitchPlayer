@@ -10,6 +10,13 @@
   "build": {
     "appId": "com.dreamingzh.localpitchplayer",
     "productName": "Local Pitch Player",
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "static/img/icon/android-chrome-512x512.png"
+    },
     "win": {
       "target": [
         "nsis",
