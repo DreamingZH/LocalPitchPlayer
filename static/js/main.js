@@ -908,6 +908,8 @@ document.addEventListener('DOMContentLoaded', function () {
     const loopBtn = document.getElementById('loop-btn');
     const pitchShiftSelect = document.getElementById('pitch-shift');
     const tempoShiftSelect = document.getElementById('tempo-shift');
+    const pitchShiftVal = document.getElementById('pitch-shift-val');
+    const tempoShiftVal = document.getElementById('tempo-shift-val');
     const progress = document.getElementById('progress');
     const progressBar = document.getElementById('progress-bar');
     const playerTitle = document.getElementById('player-title');
@@ -971,15 +973,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
             currentDisplayColor = `${r}, ${g}, ${b}`;
 
-            const startOpacity = isDark ? 0.8 : 0.5;
-            const containerOpacity = isDark ? 0.3 : 0.15;
+            // 让整个界面的背景色更加饱满与过渡，使全界面透明度更高更明显的渐变适配
+            const startOpacity = isDark ? 0.6 : 0.4;
+            const endOpacity = isDark ? 0.2 : 0.05;
 
             // 切换激活的主题层
             const newIndex = activeThemeIndex === 1 ? 2 : 1;
 
             // 直接拼接生成完整的 linear-gradient 背景，避免在 rgba() 内写 CSS 变量可能产生的解析问题
-            const bodyBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, transparent 70%)`;
-            const containerBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${containerOpacity}) 0%, transparent 70%), linear-gradient(225deg, rgba(${currentDisplayColor}, ${containerOpacity}) 0%, transparent 70%)`;
+            const bodyBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, rgba(${currentDisplayColor}, ${endOpacity}) 100%)`;
+            const containerBg = bodyBg;
             const progressBg = `linear-gradient(90deg, rgba(${currentDisplayColor}, 0.6) 0%, rgba(${currentDisplayColor}, 1) 100%)`;
 
             document.documentElement.style.setProperty(`--theme-bg-layer-${newIndex}`, bodyBg);
@@ -1088,7 +1091,7 @@ document.addEventListener('DOMContentLoaded', function () {
         analyserNode.connect(audioContext.destination);
         audioContext.resume().then(() => {
             isPlaying = true;
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i> <span data-i18n="pause">暂停</span>';
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
             i18n.updatePageTexts();
             if (!visualizerAnimationFrame) {
                 drawVisualizer();
@@ -1181,9 +1184,12 @@ document.addEventListener('DOMContentLoaded', function () {
         nextBtn.addEventListener('click', handleNextSong);
         randomBtn.addEventListener('click', handleRandomToggle);
         loopBtn.addEventListener('click', handleLoopToggle);
-        pitchShiftSelect.addEventListener('change', handlePitchShiftChange);
-        tempoShiftSelect.addEventListener('change', function () {
+        pitchShiftSelect.addEventListener('input', handlePitchShiftChange);
+        tempoShiftSelect.addEventListener('input', function () {
             currentTempoShift = parseFloat(tempoShiftSelect.value);
+            if (tempoShiftVal) {
+                tempoShiftVal.textContent = currentTempoShift.toFixed(1) + 'x';
+            }
             if (pitchShifter) {
                 pitchShifter.tempo = currentTempoShift;
             }
@@ -1285,7 +1291,7 @@ document.addEventListener('DOMContentLoaded', function () {
     function createSongListItem(song) {
         const listItem = document.createElement('div');
         listItem.classList.add('song-item');
-        listItem.textContent = song.name;
+        listItem.innerHTML = `<i class="fa-solid fa-music"></i><span class="song-item-title" title="${song.name}">${song.name}</span>`;
         listItem.addEventListener('click', () => {
             currentSongIndex = songs.indexOf(song);
             currentSeek = 0;
@@ -1338,6 +1344,9 @@ document.addEventListener('DOMContentLoaded', function () {
 // 处理音高偏移变化
     function handlePitchShiftChange() {
         currentPitchShift = parseInt(pitchShiftSelect.value);
+        if (pitchShiftVal) {
+            pitchShiftVal.textContent = currentPitchShift > 0 ? '+' + currentPitchShift : currentPitchShift;
+        }
         if (pitchShifter) {
             pitchShifter.pitch = Math.pow(2.0, currentPitchShift / 12.0);
         }
@@ -1441,7 +1450,7 @@ document.addEventListener('DOMContentLoaded', function () {
             fadeOut(gainNode, () => {
                 disconnectPitchShifter();
                 isPlaying = false;
-                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i> <span data-i18n="play">播放</span>';
+                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
                 i18n.updatePageTexts();
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = 'paused';
@@ -1572,16 +1581,20 @@ document.addEventListener('DOMContentLoaded', function () {
                         setAllIcons(canvas.toDataURL('image/png'));
                     };
                     img.src = base64;
+
+                    const albumCoverImg = document.getElementById('album-cover');
+                    if (albumCoverImg) {
+                        albumCoverImg.src = base64;
+                        albumCoverImg.style.display = 'block';
+                    }
                 } else {
                     currentAlbumColor = null;
                     updateThemeBackground();
                     resetIcons();
-                    if ('mediaSession' in navigator) {
-                        navigator.mediaSession.metadata = new MediaMetadata({
-                            title: tag.tags.title || title,
-                            artist: tag.tags.artist || 'Unknown Artist',
-                            album: tag.tags.album || 'Unknown Album'
-                        });
+                    const albumCoverImg = document.getElementById('album-cover');
+                    if (albumCoverImg) {
+                        albumCoverImg.src = '';
+                        albumCoverImg.style.display = 'none';
                     }
                 }
             },
@@ -1589,8 +1602,17 @@ document.addEventListener('DOMContentLoaded', function () {
                 currentAlbumColor = null;
                 updateThemeBackground();
                 resetIcons();
+                const albumCoverImg = document.getElementById('album-cover');
+                if (albumCoverImg) {
+                    albumCoverImg.src = '';
+                    albumCoverImg.style.display = 'none';
+                }
                 if ('mediaSession' in navigator) {
-                    navigator.mediaSession.metadata = new MediaMetadata({title: title});
+                    navigator.mediaSession.metadata = new MediaMetadata({
+                        title: title,
+                        artist: 'Unknown Artist',
+                        album: 'Unknown Album'
+                    });
                 }
             }
         });
@@ -1663,7 +1685,7 @@ document.addEventListener('DOMContentLoaded', function () {
             case ' ':
             case 'enter':
                 event.preventDefault();
-                playPauseBtn.click()
+                handlePlayPause();
                 break;
             case 'arrowleft':
                 // backwards 10 seconds
@@ -1674,13 +1696,13 @@ document.addEventListener('DOMContentLoaded', function () {
                 break;
             case 'arrowup':
                 event.preventDefault();
-                prevBtn.click()
+                handlePrevSong();
                 break;
             case 'pageup':
                 event.preventDefault();
-                if (pitchShiftSelect.selectedIndex < pitchShiftSelect.options.length - 1) {
-                    pitchShiftSelect.selectedIndex += 1;
-                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                if (parseFloat(pitchShiftSelect.value) < parseFloat(pitchShiftSelect.max)) {
+                    pitchShiftSelect.value = parseFloat(pitchShiftSelect.value) + 1;
+                    pitchShiftSelect.dispatchEvent(new Event('input'));
                 }
                 break;
             case 'arrowright':
@@ -1692,38 +1714,38 @@ document.addEventListener('DOMContentLoaded', function () {
                 break;
             case 'arrowdown':
                 event.preventDefault();
-                nextBtn.click()
+                handleNextSong();
                 break;
             case 'pagedown':
                 event.preventDefault();
-                if (pitchShiftSelect.selectedIndex > 0) {
-                    pitchShiftSelect.selectedIndex -= 1;
-                    pitchShiftSelect.dispatchEvent(new Event('change'));
+                if (parseFloat(pitchShiftSelect.value) > parseFloat(pitchShiftSelect.min)) {
+                    pitchShiftSelect.value = parseFloat(pitchShiftSelect.value) - 1;
+                    pitchShiftSelect.dispatchEvent(new Event('input'));
                 }
                 break;
             case 'r':
             case 's':
                 event.preventDefault();
-                randomBtn.click()
+                handleRandomToggle();
                 break;
             case 'l':
                 event.preventDefault();
-                loopBtn.click()
+                handleLoopToggle();
                 break;
             case '+':
             case '=':
                 event.preventDefault();
-                if (tempoShiftSelect.selectedIndex < tempoShiftSelect.options.length - 1) {
-                    tempoShiftSelect.selectedIndex += 1;
-                    tempoShiftSelect.dispatchEvent(new Event('change'));
+                if (parseFloat(tempoShiftSelect.value) < parseFloat(tempoShiftSelect.max)) {
+                    tempoShiftSelect.value = (parseFloat(tempoShiftSelect.value) + 0.1).toFixed(1);
+                    tempoShiftSelect.dispatchEvent(new Event('input'));
                 }
                 break;
             case '-':
             case '_':
                 event.preventDefault();
-                if (tempoShiftSelect.selectedIndex > 0) {
-                    tempoShiftSelect.selectedIndex -= 1;
-                    tempoShiftSelect.dispatchEvent(new Event('change'));
+                if (parseFloat(tempoShiftSelect.value) > parseFloat(tempoShiftSelect.min)) {
+                    tempoShiftSelect.value = (parseFloat(tempoShiftSelect.value) - 0.1).toFixed(1);
+                    tempoShiftSelect.dispatchEvent(new Event('input'));
                 }
                 break;
             case 'escape':
