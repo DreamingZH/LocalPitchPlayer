@@ -35,7 +35,7 @@
   },
   "keywords": [],
   "author": "DreamingZH",
-  "license": "ISC",
+  "license": "LGPL-2.1",
   "type": "commonjs",
   "bugs": {
     "url": "https://github.com/DreamingZH/LocalPitchPlayer/issues"

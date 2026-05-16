@@ -946,12 +946,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let activeThemeIndex = 1;     // 用于在主题渐变伪元素之间切换 (1 或 2)
     let allFilesMap = new Map();  // 保存所有文件（包括图片），用于查找封面
 
-    // 修改前保留此备用色值记录，以便不匹配时使用
-    // document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
-
     // 更新界面背景渐变
     function updateThemeBackground() {
-        const container = document.querySelector('.audio-player-container');
         const progressBar = document.getElementById('progress-bar');
         if (currentAlbumColor) {
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -991,12 +987,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             // 直接拼接生成完整的 linear-gradient 背景，避免在 rgba() 内写 CSS 变量可能产生的解析问题
             const bodyBg = `linear-gradient(135deg, rgba(${currentDisplayColor}, ${startOpacity}) 0%, rgba(${currentDisplayColor}, ${endOpacity}) 100%)`;
-            const containerBg = bodyBg;
-            const progressBg = `linear-gradient(90deg, rgba(${currentDisplayColor}, 0.6) 0%, rgba(${currentDisplayColor}, 1) 100%)`;
 
             document.documentElement.style.setProperty(`--theme-bg-layer-${newIndex}`, bodyBg);
-            document.documentElement.style.setProperty(`--theme-container-bg-layer-${newIndex}`, containerBg);
-            document.documentElement.style.setProperty(`--theme-progress-bg-layer-${newIndex}`, progressBg);
             document.documentElement.style.setProperty('--theme-color-rgb-current', currentDisplayColor);
 
             document.documentElement.style.setProperty('--accent', `rgb(${currentDisplayColor})`);
@@ -1008,10 +1000,6 @@ document.addEventListener('DOMContentLoaded', function () {
             document.body.classList.remove(`theme-bg-${activeThemeIndex}`);
             document.body.classList.add(`theme-bg-${newIndex}`);
 
-            if (container) {
-                container.classList.remove(`theme-bg-${activeThemeIndex}`);
-                container.classList.add(`theme-bg-${newIndex}`);
-            }
             if (progressBar) {
                 progressBar.classList.remove(`theme-bg-${activeThemeIndex}`);
                 progressBar.classList.add(`theme-bg-${newIndex}`);
@@ -1021,7 +1009,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
         } else {
             document.body.classList.remove('theme-bg-1', 'theme-bg-2');
-            if (container) container.classList.remove('theme-bg-1', 'theme-bg-2');
             if (progressBar) progressBar.classList.remove('theme-bg-1', 'theme-bg-2');
 
             // 根据当前主题设置默认颜色
@@ -1335,7 +1322,15 @@ document.addEventListener('DOMContentLoaded', function () {
                         // 恢复默认图标
                         resetIcons();
                         // 恢复默认标题
-                        playerTitle.textContent = 'Music Player';
+                        const titleText1 = playerTitle.querySelector('.sidebar-title-text');
+                        if (titleText1) {
+                            titleText1.textContent = 'Music Player';
+                            titleText1.style.setProperty('--marquee-distance', '0px');
+                        } else {
+                            playerTitle.textContent = 'Music Player';
+                        }
+                        playerTitle.classList.remove('overflow');
+                        playerTitle.title = 'Music Player';
                         document.title = 'Music Player';
                         // 隐藏专辑封面
                         const albumCoverImg = document.getElementById('album-cover');
@@ -1426,37 +1421,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    function handleDragOver(e) {
-        e.preventDefault(); // 阻止浏览器默认行为（否则无法触发drop事件）
-        e.stopPropagation();
-        dragDropZone.classList.add('dragover'); // 添加拖拽状态样式
-    }
-
-    function handleDragLeave(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        // 只有当鼠标真正离开窗口时才移除 dragover 样式
-        if (e.relatedTarget === null || e.relatedTarget === document.documentElement) {
-            dragDropZone.classList.remove('dragover');
-        }
-    }
-
-    function handleDropEvent(e) {
-        e.preventDefault();
-        e.stopPropagation();
-        dragDropZone.classList.remove('dragover'); // 移除拖拽状态样式
-
-        const files = e.dataTransfer.files; // 获取拖拽的文件列表
-        if (files.length === 0) return;
-
-        // 处理拖拽的文件（支持单个/多个文件，文件夹需浏览器支持）
-        processDroppedFiles(files);
-    }
-
 // ====================== 文件处理通用函数 ======================
     function processDroppedFiles(files) {
         let newSongs = [];
-        let movedSongs = [];
         const playingSong = isPlaying ? songs[currentSongIndex] : null;
         const wasEmpty = songs.length === 0;
 
@@ -1486,7 +1453,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     const existingSong = songs[existingIndex];
                     songs.splice(existingIndex, 1);
                     songs.unshift(existingSong);
-                    movedSongs.push(existingSong);
                 } else {
                     // 不存在：添加新歌曲，同时存储路径用于去重
                     newSongs.push({name: file.name, path: filePath, file: file});
@@ -1500,7 +1466,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // 如果有任何变化（新歌曲或移动的歌曲）
-        if (newSongs.length > 0 || movedSongs.length > 0) {
+        if (newSongs.length > 0) {
             // 清除选中状态，避免旧的 selectedSongs 引用导致问题
             selectedSongs.clear();
             lastSelectedSong = null;
@@ -1580,8 +1546,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 selectedSongs.clear();
                 const allItems = songList.querySelectorAll('.song-item');
                 allItems.forEach(i => i.classList.remove('selected'));
-                selectedSongs.add(song);
-                listItem.classList.add('selected');
                 lastSelectedSong = song;
 
                 currentSongIndex = index;
@@ -1883,7 +1847,28 @@ document.addEventListener('DOMContentLoaded', function () {
 // 更新标题
     function updateTitle(songName) {
         const nameWithoutExt = songName.replace(/\.[^/.]+$/, "");
-        playerTitle.textContent = nameWithoutExt;
+        const titleText = playerTitle.querySelector('.sidebar-title-text');
+        if (titleText) {
+            titleText.textContent = nameWithoutExt;
+            // 重置动画
+            titleText.style.animation = 'none';
+            titleText.offsetHeight; // 触发重绘
+            titleText.style.animation = '';
+            // 检测是否溢出，只在溢出时添加 overflow class 以启用 marquee
+            const containerWidth = playerTitle.clientWidth;
+            const textWidth = titleText.scrollWidth;
+            if (textWidth > containerWidth) {
+                playerTitle.classList.add('overflow');
+                titleText.style.setProperty('--marquee-distance', `-${textWidth - containerWidth + 16}px`);
+            } else {
+                playerTitle.classList.remove('overflow');
+                titleText.style.setProperty('--marquee-distance', '0px');
+            }
+        } else {
+            playerTitle.textContent = nameWithoutExt;
+            playerTitle.classList.remove('overflow');
+        }
+        playerTitle.title = nameWithoutExt;
         document.title = nameWithoutExt;
     }
 
@@ -2148,6 +2133,8 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'delete':
             case 'backspace':
                 if (document.activeElement !== searchInput) {
+                    // 只在多选模式下才响应删除快捷键
+                    if (!multiSelectMode) return;
                     event.preventDefault();
                     if (selectedSongs.size > 0) {
                         const playingSong = songs[currentSongIndex];
@@ -2205,8 +2192,18 @@ document.addEventListener('DOMContentLoaded', function () {
                             currentAlbumColor = null;
                             updateThemeBackground();
                             resetIcons();
-                            playerTitle.textContent = 'Music Player';
+                            // 恢复默认标题
+                            const titleText1 = playerTitle.querySelector('.sidebar-title-text');
+                            if (titleText1) {
+                                titleText1.textContent = 'Music Player';
+                                titleText1.style.setProperty('--marquee-distance', '0px');
+                            } else {
+                                playerTitle.textContent = 'Music Player';
+                            }
+                            playerTitle.classList.remove('overflow');
+                            playerTitle.title = 'Music Player';
                             document.title = 'Music Player';
+                            // 隐藏专辑封面
                             const albumCoverImg = document.getElementById('album-cover');
                             if (albumCoverImg) {
                                 albumCoverImg.src = '';

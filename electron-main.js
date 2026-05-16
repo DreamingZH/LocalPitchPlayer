@@ -22,7 +22,6 @@ function createWindow() {
     win.setMenu(null); // 完全移除工具栏（如果觉得 autoHide 还有按 Alt 会出现的问题，这句可以彻底干掉菜单）
     win.maximize();
     win.loadFile('index.html');
-    // win.webContents.openDevTools(); // Uncomment to open dev tools
 
     // 关键：阻止文件拖拽时触发页面导航（这是 Electron 的默认行为导致拖拽失效）
     win.webContents.on('will-navigate', (event, url) => {
