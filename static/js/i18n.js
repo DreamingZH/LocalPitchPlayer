@@ -19,7 +19,10 @@ const i18n = (function () {
             pitch: '变调',
             pitchHint: '建议 ±2 范围',
             speed: '变速',
-            noMatch: '无匹配歌曲'
+            noMatch: '无匹配歌曲',
+        multiSelect: '批量选择',
+        deleteSelect: '删除选中',
+        selectAll: '全选',
         },
         'en': {
             selectFolder: 'Select Folder',
@@ -36,7 +39,10 @@ const i18n = (function () {
             pitch: 'Pitch',
             pitchHint: 'Suggest ±2 range',
             speed: 'Speed',
-            noMatch: 'No matching songs'
+            noMatch: 'No matching songs',
+        multiSelect: 'Batch Select',
+        deleteSelect: 'Delete Selected',
+        selectAll: 'Select All',
         }
     };
 

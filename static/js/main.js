@@ -914,10 +914,18 @@ document.addEventListener('DOMContentLoaded', function () {
     const progressBar = document.getElementById('progress-bar');
     const playerTitle = document.getElementById('player-title');
     const searchInput = document.getElementById('search-input');
+    const deleteSelectedBtn = document.getElementById('delete-selected-btn');
+    const multiSelectBtn = document.getElementById('multi-select-btn');
+    const selectAllBtn = document.getElementById('select-all-btn');
+    const togglePlaylistBtn = document.getElementById('toggle-playlist-btn');
+    const sidebarLayout = document.querySelector('.sidebar-layout');
 
 // 全局变量
     let songs = [];
     let currentSongIndex = 0;
+    let multiSelectMode = false;
+    let selectedSongs = new Set();
+    let lastSelectedSong = null;
     let isPlaying = false;
     let isLooping = false;
     let isRandom = false;
@@ -936,9 +944,10 @@ document.addEventListener('DOMContentLoaded', function () {
     let currentAlbumColor = null; // null或 "r, g, b"
     let currentDisplayColor = null; // 经过当前明暗主题优化后的展示色
     let activeThemeIndex = 1;     // 用于在主题渐变伪元素之间切换 (1 或 2)
+    let allFilesMap = new Map();  // 保存所有文件（包括图片），用于查找封面
 
     // 修改前保留此备用色值记录，以便不匹配时使用
-    document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
+    // document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
 
     // 更新界面背景渐变
     function updateThemeBackground() {
@@ -1014,7 +1023,14 @@ document.addEventListener('DOMContentLoaded', function () {
             document.body.classList.remove('theme-bg-1', 'theme-bg-2');
             if (container) container.classList.remove('theme-bg-1', 'theme-bg-2');
             if (progressBar) progressBar.classList.remove('theme-bg-1', 'theme-bg-2');
-            document.documentElement.style.setProperty('--theme-color-rgb-current', '59,130,246');
+
+            // 根据当前主题设置默认颜色
+            const currentTheme = document.documentElement.getAttribute('data-theme');
+            const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+            const isDark = currentTheme === 'dark' || (!currentTheme && isSystemDark);
+            const defaultColor = isDark ? '100, 155, 210' : '85, 125, 165';
+            document.documentElement.style.setProperty('--theme-color-rgb-current', defaultColor);
+
             currentDisplayColor = null;
 
             document.documentElement.style.removeProperty('--accent');
@@ -1170,14 +1186,53 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 初始化音频播放器
     function setupAudioPlayer() {
+        if (togglePlaylistBtn && sidebarLayout) {
+            togglePlaylistBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                sidebarLayout.classList.toggle('show-mobile');
+            });
+            // 也可以点击主区域关闭侧边栏
+            document.getElementById('main-layout').addEventListener('click', (e) => {
+                if(window.innerWidth <= 800 && sidebarLayout.classList.contains('show-mobile')){
+                   sidebarLayout.classList.remove('show-mobile');
+                }
+            });
+        }
+
         folderInput.addEventListener('change', handleFolderInputChange);
         singleInput.addEventListener('change', function () {
             const files = singleInput.files;
             processDroppedFiles(files);
+            // 重置 input 值，确保下次选择相同文件时能触发 change 事件
+            singleInput.value = '';
         });
-        dragDropZone.addEventListener('dragover', handleDragOver);
-        dragDropZone.addEventListener('dragleave', handleDragLeave);
-        dragDropZone.addEventListener('drop', handleDropEvent);
+
+        // 拖拽事件绑定到 document，确保从外部拖入文件时能正确触发
+        document.addEventListener('dragover', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dragDropZone.classList.add('dragover');
+        });
+
+        document.addEventListener('dragleave', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            // 只有当鼠标真正离开窗口时才移除 dragover 样式
+            if (e.relatedTarget === null || e.relatedTarget === document.documentElement) {
+                dragDropZone.classList.remove('dragover');
+            }
+        });
+
+        document.addEventListener('drop', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dragDropZone.classList.remove('dragover');
+
+            const files = e.dataTransfer.files;
+            if (files.length === 0) return;
+
+            processDroppedFiles(files);
+        });
 
         playPauseBtn.addEventListener('click', handlePlayPause);
         prevBtn.addEventListener('click', handlePrevSong);
@@ -1212,6 +1267,105 @@ document.addEventListener('DOMContentLoaded', function () {
         });
         searchInput.addEventListener('input', handleSearchInput);
 
+        if (deleteSelectedBtn) {
+            deleteSelectedBtn.addEventListener('click', () => {
+                if (selectedSongs.size > 0) {
+                    const playingSong = songs[currentSongIndex];
+                    let removedPlaying = false;
+                    let playingSongOriginalIndex = currentSongIndex;
+
+                    // 通过 DOM 元素的顺序索引来删除，避免 selectedSongs 对象引用失效的问题
+                    // 遍历所有可见的 song-item，如果被选中则记录其索引
+                    const allItems = Array.from(songList.querySelectorAll('.song-item'));
+                    const indicesToRemove = [];
+                    allItems.forEach((item, index) => {
+                        if (item.classList.contains('selected')) {
+                            if (index === currentSongIndex) {
+                                removedPlaying = true;
+                            }
+                            indicesToRemove.push(index);
+                        }
+                    });
+
+                    // 从大到小排序，确保删除时索引不会偏移
+                    indicesToRemove.sort((a, b) => b - a);
+
+                    // 执行删除
+                    indicesToRemove.forEach(indexToRemove => {
+                        songs.splice(indexToRemove, 1);
+                    });
+
+                    // 重新渲染列表
+                    songList.innerHTML = '';
+                    songs.forEach(song => {
+                        const listItem = createSongListItem(song);
+                        songList.appendChild(listItem);
+                    });
+
+                    selectedSongs.clear();
+                    lastSelectedSong = null;
+                    updatePlaylistActions();
+
+                    if (songs.length === 0) {
+                        currentSongIndex = 0;
+                        // 停止播放并重置所有状态
+                        if (pitchShifter) {
+                            try {
+                                if (typeof pitchShifter.stop === 'function') {
+                                    pitchShifter.stop();
+                                } else {
+                                    pitchShifter.disconnect();
+                                }
+                            } catch (e) {
+                                console.error("Error stopping pitchShifter:", e);
+                            }
+                            pitchShifter = null;
+                        }
+                        isPlaying = false;
+                        playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+                        i18n.updatePageTexts();
+                        if ('mediaSession' in navigator) {
+                            navigator.mediaSession.playbackState = 'paused';
+                        }
+                        // 重置进度条
+                        progressBar.style.width = '0%';
+                        // 恢复默认配色
+                        currentAlbumColor = null;
+                        updateThemeBackground();
+                        // 恢复默认图标
+                        resetIcons();
+                        // 恢复默认标题
+                        playerTitle.textContent = 'Music Player';
+                        document.title = 'Music Player';
+                        // 隐藏专辑封面
+                        const albumCoverImg = document.getElementById('album-cover');
+                        if (albumCoverImg) {
+                            albumCoverImg.src = '';
+                            albumCoverImg.style.display = 'none';
+                        }
+                    } else {
+                        if (removedPlaying) {
+                            // 播放被删除歌曲的下一首
+                            // 如果被删除的是最后一首，则播放新的最后一首
+                            currentSongIndex = Math.min(playingSongOriginalIndex, songs.length - 1);
+                            currentSeek = 0;
+                            playSong(songs[currentSongIndex]);
+                        } else {
+                            // 重新查找正在播放的歌曲在新列表中的位置
+                            currentSongIndex = songs.indexOf(playingSong);
+                            if (currentSongIndex === -1) currentSongIndex = 0;
+                        }
+                    }
+
+                    // 更新 active 类
+                    const songItems = songList.querySelectorAll('.song-item');
+                    songItems.forEach((item, index) => {
+                        item.classList.toggle('active', index === currentSongIndex);
+                    });
+                }
+            });
+        }
+
         if ('mediaSession' in navigator) {
             navigator.mediaSession.setActionHandler('play', () => {
                 if (!isPlaying) resumeSong();
@@ -1221,6 +1375,54 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
             navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+        }
+
+        if (multiSelectBtn) {
+            multiSelectBtn.addEventListener('click', () => {
+                multiSelectMode = !multiSelectMode;
+                multiSelectBtn.classList.toggle('active', multiSelectMode);
+                songList.classList.toggle('multi-select-mode', multiSelectMode);
+                if (multiSelectMode) {
+                    if(selectAllBtn) selectAllBtn.classList.remove('hidden');
+                    updatePlaylistActions();
+                } else {
+                    if(selectAllBtn) selectAllBtn.classList.add('hidden');
+                    selectedSongs.clear();
+                    lastSelectedSong = null;
+                    const allItems = songList.querySelectorAll('.song-item');
+                    allItems.forEach(i => i.classList.remove('selected'));
+                    updatePlaylistActions();
+                }
+            });
+        }
+
+        if (selectAllBtn) {
+            selectAllBtn.addEventListener('click', () => {
+                const songItems = Array.from(songList.querySelectorAll('.song-item')).filter(i => i.style.display !== 'none');
+                const allSelected = songItems.every(i => i.classList.contains('selected'));
+
+                if (allSelected) {
+                    songItems.forEach(item => {
+                        item.classList.remove('selected');
+                    });
+                    selectedSongs.clear();
+                } else {
+                    songItems.forEach(item => {
+                        item.classList.add('selected');
+                    });
+                    // 全选时直接将所有可见歌曲加入 selectedSongs
+                    // 使用 songs 数组的索引来确保引用正确
+                    selectedSongs.clear();
+                    const allItems = Array.from(songList.querySelectorAll('.song-item'));
+                    songItems.forEach(item => {
+                        const idx = allItems.indexOf(item);
+                        if (idx > -1 && idx < songs.length) {
+                            selectedSongs.add(songs[idx]);
+                        }
+                    });
+                }
+                updatePlaylistActions();
+            });
         }
     }
 
@@ -1233,7 +1435,10 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleDragLeave(e) {
         e.preventDefault();
         e.stopPropagation();
-        dragDropZone.classList.remove('dragover'); // 移除拖拽状态样式
+        // 只有当鼠标真正离开窗口时才移除 dragover 样式
+        if (e.relatedTarget === null || e.relatedTarget === document.documentElement) {
+            dragDropZone.classList.remove('dragover');
+        }
     }
 
     function handleDropEvent(e) {
@@ -1250,34 +1455,87 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // ====================== 文件处理通用函数 ======================
     function processDroppedFiles(files) {
-        let hasAudioFiles = false;
-        // 检查是否有音频文件
+        let newSongs = [];
+        let movedSongs = [];
+        const playingSong = isPlaying ? songs[currentSongIndex] : null;
+        const wasEmpty = songs.length === 0;
+
+        // 首先遍历所有文件，保存图片文件到 allFiles 映射中
         Array.from(files).forEach(file => {
-            if (file.type.startsWith('audio/')) {
-                hasAudioFiles = true;
+            const filePath = file.webkitRelativePath || file.name;
+            const fileName = file.name.toLowerCase();
+
+            // 检查是否是封面图片文件
+            if (fileName === 'cover.jpg' || fileName === 'cover.jpeg' ||
+                fileName === 'cover.png' || fileName === 'cover.webp' ||
+                fileName === 'folder.jpg' || fileName === 'folder.png') {
+                // 保存图片文件，用于后续查找封面
+                allFilesMap.set(filePath, file);
             }
         });
 
-        // 只有存在音频文件时才清空现有列表
-        if (hasAudioFiles) {
-            songs = [];
-            songList.innerHTML = '';
+        // 检查是否有音频文件，如果已存在则置顶
+        Array.from(files).forEach(file => {
+            if (file.type.startsWith('audio/')) {
+                // 获取文件路径：优先使用 webkitRelativePath（包含文件夹路径），否则使用文件名
+                const filePath = file.webkitRelativePath || file.name;
+                // 检查歌曲列表中是否已有相同路径的文件
+                const existingIndex = songs.findIndex(s => s.path === filePath);
+                if (existingIndex > -1) {
+                    // 已存在：移动到顶部
+                    const existingSong = songs[existingIndex];
+                    songs.splice(existingIndex, 1);
+                    songs.unshift(existingSong);
+                    movedSongs.push(existingSong);
+                } else {
+                    // 不存在：添加新歌曲，同时存储路径用于去重
+                    newSongs.push({name: file.name, path: filePath, file: file});
+                }
+            }
+        });
+
+        // 如果有新歌曲，添加到数组顶部
+        if (newSongs.length > 0) {
+            songs.unshift(...newSongs);
         }
 
-        Array.from(files).forEach(file => {
-            // 过滤非音频文件（根据扩展名或MIME类型）
-            if (file.type.startsWith('audio/')) {
-                const song = {name: file.name, file: file};
-                songs.push(song);
+        // 如果有任何变化（新歌曲或移动的歌曲）
+        if (newSongs.length > 0 || movedSongs.length > 0) {
+            // 清除选中状态，避免旧的 selectedSongs 引用导致问题
+            selectedSongs.clear();
+            lastSelectedSong = null;
+            // 如果处于多选模式，退出多选模式
+            if (multiSelectMode) {
+                multiSelectMode = false;
+                multiSelectBtn.classList.remove('active');
+                songList.classList.remove('multi-select-mode');
+                if (selectAllBtn) selectAllBtn.classList.add('hidden');
+                if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+            }
+            updatePlaylistActions();
+
+            // 重新渲染列表
+            songList.innerHTML = '';
+            songs.forEach(song => {
                 const listItem = createSongListItem(song);
                 songList.appendChild(listItem);
-            }
-        });
+            });
 
-        // 自动播放第一个文件（可选）
-        if (songs.length > 0 && !isPlaying) {
-            currentSongIndex = 0;
-            playSong(songs[currentSongIndex]);
+            // 更新当前播放索引：重新查找正在播放的歌曲在新列表中的位置
+            if (playingSong) {
+                currentSongIndex = songs.indexOf(playingSong);
+                if (currentSongIndex === -1) currentSongIndex = 0;
+            } else if (wasEmpty && songs.length > 0) {
+                // 列表之前为空，添加新歌曲后自动播放第一首
+                currentSongIndex = 0;
+                playSong(songs[currentSongIndex]);
+            }
+
+            // Re-bind active classes
+            const songItems = songList.querySelectorAll('.song-item');
+            songItems.forEach((item, index) => {
+                item.classList.toggle('active', index === currentSongIndex);
+            });
         }
     }
 
@@ -1285,19 +1543,120 @@ document.addEventListener('DOMContentLoaded', function () {
     function handleFolderInputChange(event) {
         const files = event.target.files;
         processDroppedFiles(files);
+        // 重置 input 值，确保下次选择相同文件夹时能触发 change 事件
+        event.target.value = '';
     }
 
-// 创建歌曲列表项
+// 创建歌曲��表项
     function createSongListItem(song) {
         const listItem = document.createElement('div');
         listItem.classList.add('song-item');
+        listItem.draggable = true;
         listItem.innerHTML = `<i class="fa-solid fa-music"></i><span class="song-item-title" title="${song.name}">${song.name}</span>`;
-        listItem.addEventListener('click', () => {
-            currentSongIndex = songs.indexOf(song);
-            currentSeek = 0;
-            playSong(song);
+
+        listItem.addEventListener('click', (e) => {
+            const index = songs.indexOf(song);
+            if (multiSelectMode || e.ctrlKey || e.metaKey || e.shiftKey) {
+                if (selectedSongs.has(song)) {
+                    selectedSongs.delete(song);
+                    listItem.classList.remove('selected');
+                } else {
+                    selectedSongs.add(song);
+                    listItem.classList.add('selected');
+                }
+                lastSelectedSong = song;
+            } else if (e.shiftKey && lastSelectedSong) {
+                const lastIndex = songs.indexOf(lastSelectedSong);
+                const start = Math.min(lastIndex, index);
+                const end = Math.max(lastIndex, index);
+                selectedSongs.clear();
+                const allItems = songList.querySelectorAll('.song-item');
+                allItems.forEach(i => i.classList.remove('selected'));
+                for (let i = start; i <= end; i++) {
+                    selectedSongs.add(songs[i]);
+                    allItems[i].classList.add('selected');
+                }
+            } else {
+                selectedSongs.clear();
+                const allItems = songList.querySelectorAll('.song-item');
+                allItems.forEach(i => i.classList.remove('selected'));
+                selectedSongs.add(song);
+                listItem.classList.add('selected');
+                lastSelectedSong = song;
+
+                currentSongIndex = index;
+                currentSeek = 0;
+                playSong(song);
+            }
+            updatePlaylistActions();
         });
+
+        // Drag and drop sorting
+        listItem.addEventListener('dragstart', (e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', songs.indexOf(song));
+            listItem.classList.add('dragging');
+        });
+
+        listItem.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            listItem.classList.add('drag-over');
+        });
+
+        listItem.addEventListener('dragleave', () => {
+            listItem.classList.remove('drag-over');
+        });
+
+        listItem.addEventListener('drop', (e) => {
+            e.stopPropagation();
+            listItem.classList.remove('drag-over');
+            const draggedIndex = parseInt(e.dataTransfer.getData('text/plain'));
+            const targetIndex = songs.indexOf(song);
+
+            if (draggedIndex !== targetIndex && !isNaN(draggedIndex)) {
+                // Determine current playing song
+                const playingSong = songs[currentSongIndex];
+
+                // Reorder array
+                const [draggedSong] = songs.splice(draggedIndex, 1);
+                songs.splice(targetIndex, 0, draggedSong);
+
+                // Reorder DOM
+                const allItems = Array.from(songList.children);
+                if (draggedIndex < targetIndex) {
+                    songList.insertBefore(allItems[draggedIndex], listItem.nextSibling);
+                } else {
+                    songList.insertBefore(allItems[draggedIndex], listItem);
+                }
+
+                // Update currentSongIndex so playback isn't interrupted
+                currentSongIndex = songs.indexOf(playingSong);
+            }
+        });
+
+        listItem.addEventListener('dragend', () => {
+            listItem.classList.remove('dragging');
+        });
+
         return listItem;
+    }
+
+    function updatePlaylistActions() {
+        if (multiSelectMode) {
+            if (deleteSelectedBtn) {
+                if (selectedSongs.size > 0) {
+                    deleteSelectedBtn.style.opacity = '1';
+                    deleteSelectedBtn.style.pointerEvents = 'auto';
+                } else {
+                    deleteSelectedBtn.style.opacity = '0.5';
+                    deleteSelectedBtn.style.pointerEvents = 'none';
+                }
+                deleteSelectedBtn.classList.remove('hidden');
+            }
+        } else {
+            if (deleteSelectedBtn) deleteSelectedBtn.classList.add('hidden');
+        }
     }
 
 // 处理播放暂停按钮点击
@@ -1361,7 +1720,7 @@ document.addEventListener('DOMContentLoaded', function () {
         songItems.forEach((item) => {
             const songName = item.textContent.toLowerCase();
             if (searchTerm === '' || songName.includes(searchTerm)) {
-                item.style.display = 'block';
+                item.style.display = '';
                 hasMatch = true;
             } else {
                 item.style.display = 'none';
@@ -1371,16 +1730,24 @@ document.addEventListener('DOMContentLoaded', function () {
         if (!hasMatch && searchTerm !== '') {
             searchInput.classList.add('error');
             songItems.forEach((item) => {
-                item.style.display = 'block';
+                item.style.display = '';
             });
         } else {
             searchInput.classList.remove('error');
         }
+
+        // 搜索内容变化时（包括清空），滚动到当前播放歌曲
+        scrollToActiveSong();
     }
 
 // 播放歌曲
     function playSong(song) {
         if (!song) return;
+
+        // 小屏幕时点击播放后自动关闭播放列表
+        if (window.innerWidth <= 800 && sidebarLayout && sidebarLayout.classList.contains('show-mobile')) {
+            sidebarLayout.classList.remove('show-mobile');
+        }
 
         const currentRequestId = ++loadRequestId;
 
@@ -1535,93 +1902,184 @@ document.addEventListener('DOMContentLoaded', function () {
             onSuccess: function (tag) {
                 const {picture} = tag.tags;
                 if (picture) {
-                    let base64String = "";
-                    for (let i = 0; i < picture.data.length; i++) {
-                        base64String += String.fromCharCode(picture.data[i]);
-                    }
-                    const base64 = "data:" + picture.format + ";base64," + window.btoa(base64String);
-
-                    if ('mediaSession' in navigator) {
-                        navigator.mediaSession.metadata = new MediaMetadata({
-                            title: tag.tags.title || title,
-                            artist: tag.tags.artist || 'Unknown Artist',
-                            album: tag.tags.album || 'Unknown Album',
-                            artwork: [
-                                {src: base64, sizes: '512x512', type: picture.format || 'image/png'}
-                            ]
-                        });
-                    }
-
-                    const img = new Image();
-                    img.onload = function () {
-                        currentAlbumColor = getAverageColor(img);
-                        updateThemeBackground();
-
-                        const canvas = document.createElement('canvas');
-                        const ctx = canvas.getContext('2d');
-                        const size = 64;
-                        const radius = 16;
-                        canvas.width = size;
-                        canvas.height = size;
-
-                        ctx.beginPath();
-                        ctx.moveTo(radius, 0);
-                        ctx.lineTo(size - radius, 0);
-                        ctx.quadraticCurveTo(size, 0, size, radius);
-                        ctx.lineTo(size, size - radius);
-                        ctx.quadraticCurveTo(size, size, size - radius, size);
-                        ctx.lineTo(radius, size);
-                        ctx.quadraticCurveTo(0, size, 0, size - radius);
-                        ctx.lineTo(0, radius);
-                        ctx.quadraticCurveTo(0, 0, radius, 0);
-                        ctx.closePath();
-                        ctx.clip();
-
-                        ctx.drawImage(img, 0, 0, size, size);
-                        setAllIcons(canvas.toDataURL('image/png'));
-                    };
-                    img.src = base64;
-
-                    const albumCoverImg = document.getElementById('album-cover');
-                    if (albumCoverImg) {
-                        albumCoverImg.src = base64;
-                        albumCoverImg.style.display = 'block';
-                    }
+                    // 有内嵌封面，直接使用
+                    processCoverImage(picture, tag, title);
                 } else {
-                    currentAlbumColor = null;
-                    updateThemeBackground();
-                    resetIcons();
-                    const albumCoverImg = document.getElementById('album-cover');
-                    if (albumCoverImg) {
-                        albumCoverImg.src = '';
-                        albumCoverImg.style.display = 'none';
-                    }
+                    // 没有内嵌封面，尝试从同文件夹获取 cover.jpg/png
+                    tryLoadFolderCover(file, title, tag);
                 }
             },
             onError: function (error) {
-                currentAlbumColor = null;
-                updateThemeBackground();
-                resetIcons();
-                const albumCoverImg = document.getElementById('album-cover');
-                if (albumCoverImg) {
-                    albumCoverImg.src = '';
-                    albumCoverImg.style.display = 'none';
-                }
-                if ('mediaSession' in navigator) {
-                    navigator.mediaSession.metadata = new MediaMetadata({
-                        title: title,
-                        artist: 'Unknown Artist',
-                        album: 'Unknown Album'
-                    });
-                }
+                // 读取标签失败，也尝试从同文件夹获取封面
+                tryLoadFolderCover(file, title, null);
             }
         });
+    }
+
+    // 尝试从同文件夹加载封面图片 (cover.jpg/cover.png)
+    function tryLoadFolderCover(file, title, tag) {
+        // 获取当前歌曲的相对路径
+        const songPath = file.webkitRelativePath || file.name;
+        // 提取文件夹路径（去掉文件名）
+        const lastSlashIndex = songPath.lastIndexOf('/');
+        const folderPath = lastSlashIndex > -1 ? songPath.substring(0, lastSlashIndex + 1) : '';
+
+        // 尝试的封面文件名列表
+        const coverNames = ['cover.jpg', 'cover.jpeg', 'cover.png', 'cover.webp', 'folder.jpg', 'folder.png', 'Cover.jpg', 'Cover.png'];
+
+        // 从 allFilesMap 中查找匹配的封面文件
+        for (const coverName of coverNames) {
+            const coverPath = folderPath + coverName;
+            if (allFilesMap.has(coverPath)) {
+                // 找到封面文件，读取并显示
+                const coverFile = allFilesMap.get(coverPath);
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const base64 = e.target.result;
+                    applyCoverImage(base64, title, tag);
+                };
+                reader.onerror = function() {
+                    // 读取失败，使用默认
+                    resetToDefaultCover(title);
+                };
+                reader.readAsDataURL(coverFile);
+                return;
+            }
+        }
+
+        // 没有找到封面，使用默认
+        resetToDefaultCover(title);
+    }
+
+    // 应用封面图片到界面
+    function applyCoverImage(base64, title, tag) {
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: tag?.tags?.title || title,
+                artist: tag?.tags?.artist || 'Unknown Artist',
+                album: tag?.tags?.album || 'Unknown Album',
+                artwork: [
+                    {src: base64, sizes: '512x512', type: 'image/jpeg'}
+                ]
+            });
+        }
+
+        const img = new Image();
+        img.onload = function () {
+            currentAlbumColor = getAverageColor(img);
+            updateThemeBackground();
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 64;
+            const radius = 16;
+            canvas.width = size;
+            canvas.height = size;
+
+            ctx.beginPath();
+            ctx.moveTo(radius, 0);
+            ctx.lineTo(size - radius, 0);
+            ctx.quadraticCurveTo(size, 0, size, radius);
+            ctx.lineTo(size, size - radius);
+            ctx.quadraticCurveTo(size, size, size - radius, size);
+            ctx.lineTo(radius, size);
+            ctx.quadraticCurveTo(0, size, 0, size - radius);
+            ctx.lineTo(0, radius);
+            ctx.quadraticCurveTo(0, 0, radius, 0);
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.drawImage(img, 0, 0, size, size);
+            setAllIcons(canvas.toDataURL('image/png'));
+        };
+        img.src = base64;
+
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = base64;
+            albumCoverImg.style.display = 'block';
+        }
+    }
+
+    // 重置为默认封面
+    function resetToDefaultCover(title) {
+        currentAlbumColor = null;
+        updateThemeBackground();
+        resetIcons();
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = '';
+            albumCoverImg.style.display = 'none';
+        }
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title,
+                artist: 'Unknown Artist',
+                album: 'Unknown Album'
+            });
+        }
+    }
+
+    // 处理内嵌封面图片
+    function processCoverImage(picture, tag, title) {
+        let base64String = "";
+        for (let i = 0; i < picture.data.length; i++) {
+            base64String += String.fromCharCode(picture.data[i]);
+        }
+        const base64 = "data:" + picture.format + ";base64," + window.btoa(base64String);
+
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: tag.tags.title || title,
+                artist: tag.tags.artist || 'Unknown Artist',
+                album: tag.tags.album || 'Unknown Album',
+                artwork: [
+                    {src: base64, sizes: '512x512', type: picture.format || 'image/png'}
+                ]
+            });
+        }
+
+        const img = new Image();
+        img.onload = function () {
+            currentAlbumColor = getAverageColor(img);
+            updateThemeBackground();
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 64;
+            const radius = 16;
+            canvas.width = size;
+            canvas.height = size;
+
+            ctx.beginPath();
+            ctx.moveTo(radius, 0);
+            ctx.lineTo(size - radius, 0);
+            ctx.quadraticCurveTo(size, 0, size, radius);
+            ctx.lineTo(size, size - radius);
+            ctx.quadraticCurveTo(size, size, size - radius, size);
+            ctx.lineTo(radius, size);
+            ctx.quadraticCurveTo(0, size, 0, size - radius);
+            ctx.lineTo(0, radius);
+            ctx.quadraticCurveTo(0, 0, radius, 0);
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.drawImage(img, 0, 0, size, size);
+            setAllIcons(canvas.toDataURL('image/png'));
+        };
+        img.src = base64;
+
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = base64;
+            albumCoverImg.style.display = 'block';
+        }
     }
 
     function setAllIcons(href) {
         const links = document.querySelectorAll("link[rel*='icon']");
         links.forEach(link => link.href = href);
-        
+
         // 传递给 Electron 主进程更新应用/任务栏图标
         if (window.require) {
             try {
@@ -1637,7 +2095,7 @@ document.addEventListener('DOMContentLoaded', function () {
             // 恢复默认图标
             link.href = "./static/img/icon/favicon-32x32.png";
         });
-        
+
         // 传递给 Electron 主进程恢复默认图标
         if (window.require) {
             try {
@@ -1687,8 +2145,92 @@ document.addEventListener('DOMContentLoaded', function () {
                 event.preventDefault();
                 handlePlayPause();
                 break;
+            case 'delete':
+            case 'backspace':
+                if (document.activeElement !== searchInput) {
+                    event.preventDefault();
+                    if (selectedSongs.size > 0) {
+                        const playingSong = songs[currentSongIndex];
+                        let removedPlaying = false;
+                        let playingSongOriginalIndex = currentSongIndex;
+
+                        const allItems = Array.from(songList.querySelectorAll('.song-item'));
+                        const indicesToRemove = [];
+                        allItems.forEach((item, index) => {
+                            if (item.classList.contains('selected')) {
+                                if (index === currentSongIndex) {
+                                    removedPlaying = true;
+                                }
+                                indicesToRemove.push(index);
+                            }
+                        });
+
+                        indicesToRemove.sort((a, b) => b - a);
+
+                        indicesToRemove.forEach(indexToRemove => {
+                            songs.splice(indexToRemove, 1);
+                        });
+
+                        songList.innerHTML = '';
+                        songs.forEach(song => {
+                            const listItem = createSongListItem(song);
+                            songList.appendChild(listItem);
+                        });
+
+                        selectedSongs.clear();
+                        lastSelectedSong = null;
+                        updatePlaylistActions();
+
+                        if (songs.length === 0) {
+                            currentSongIndex = 0;
+                            if (pitchShifter) {
+                                try {
+                                    if (typeof pitchShifter.stop === 'function') {
+                                        pitchShifter.stop();
+                                    } else {
+                                        pitchShifter.disconnect();
+                                    }
+                                } catch (e) {
+                                    console.error("Error stopping pitchShifter:", e);
+                                }
+                                pitchShifter = null;
+                            }
+                            isPlaying = false;
+                            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+                            i18n.updatePageTexts();
+                            if ('mediaSession' in navigator) {
+                                navigator.mediaSession.playbackState = 'paused';
+                            }
+                            progressBar.style.width = '0%';
+                            currentAlbumColor = null;
+                            updateThemeBackground();
+                            resetIcons();
+                            playerTitle.textContent = 'Music Player';
+                            document.title = 'Music Player';
+                            const albumCoverImg = document.getElementById('album-cover');
+                            if (albumCoverImg) {
+                                albumCoverImg.src = '';
+                                albumCoverImg.style.display = 'none';
+                            }
+                        } else {
+                            if (removedPlaying) {
+                                currentSongIndex = Math.min(playingSongOriginalIndex, songs.length - 1);
+                                currentSeek = 0;
+                                playSong(songs[currentSongIndex]);
+                            } else {
+                                currentSongIndex = songs.indexOf(playingSong);
+                                if (currentSongIndex === -1) currentSongIndex = 0;
+                            }
+                        }
+
+                        const songItems = songList.querySelectorAll('.song-item');
+                        songItems.forEach((item, index) => {
+                            item.classList.toggle('active', index === currentSongIndex);
+                        });
+                    }
+                }
+                break;
             case 'arrowleft':
-                // backwards 10 seconds
                 if (pitchShifter) {
                     event.preventDefault();
                     pitchShifter.percentagePlayed = Math.max(0, (currentSeek - 10) / pitchShifter.duration);
@@ -1706,7 +2248,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
                 break;
             case 'arrowright':
-                // forward 10 seconds
                 if (pitchShifter) {
                     event.preventDefault();
                     pitchShifter.percentagePlayed = Math.min(0.999, (currentSeek + 10) / pitchShifter.duration);
@@ -1768,17 +2309,15 @@ document.addEventListener('DOMContentLoaded', function () {
     });
 
     function preventMobileZoom() {
-        // 阻止 Safari 的 gesturestart (防止双指缩放手势)
         document.addEventListener('gesturestart', function (e) {
             e.preventDefault();
         });
 
-        // 阻止双击缩放
         document.addEventListener('touchmove', function (event) {
             if (event.touches.length > 1) {
                 event.preventDefault();
             }
-        }, {passive: false}); // 必须设置为 postive: false 才能调用 preventDefault
+        }, {passive: false});
     }
 
     preventMobileZoom();

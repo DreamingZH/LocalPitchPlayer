@@ -24,6 +24,14 @@ function createWindow() {
     win.loadFile('index.html');
     // win.webContents.openDevTools(); // Uncomment to open dev tools
 
+    // 关键：阻止文件拖拽时触发页面导航（这是 Electron 的默认行为导致拖拽失效）
+    win.webContents.on('will-navigate', (event, url) => {
+        // 阻止所有 file:// 协议的非页面导航（即文件拖拽）
+        if (url.startsWith('file://') && !url.endsWith('.html')) {
+            event.preventDefault();
+        }
+    });
+
     // 监听来自页面的图标更新（歌曲封面）
     ipcMain.on('update-icon', (event, dataUrl) => {
         if (dataUrl) {
@@ -33,7 +41,6 @@ function createWindow() {
             win.setIcon(path.join(__dirname, 'LocalPitchPlayer.png'));
         }
     });
-
 }
 
 app.whenReady().then(() => {
