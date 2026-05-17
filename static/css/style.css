@@ -161,7 +161,7 @@ body.theme-bg-2::after {
     width: 100vw;
     height: 100vh;
     background: transparent;
-    -webkit-app-region: no-drag;
+    /*-webkit-app-region: no-drag;*/
     overflow: hidden;
 }
 
@@ -556,6 +556,7 @@ body.theme-bg-2::after {
     box-shadow: var(--shadow);
     -webkit-user-select: none;
     user-select: none;
+    margin-top: 4px;
 }
 .lang-toggle:hover {
     background: var(--accent-light);
@@ -576,6 +577,7 @@ body.theme-bg-2::after {
     display: flex;
     align-items: center;
     justify-content: center;
+    margin-top: 4px; /* 新增：向下移动 */
 }
 .toggle-playlist-btn:hover {
     background: var(--accent-light);
