@@ -948,7 +948,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 更新界面背景渐变
     function updateThemeBackground() {
-        const progressBar = document.getElementById('progress-bar');
         if (currentAlbumColor) {
             const currentTheme = document.documentElement.getAttribute('data-theme');
             const isSystemDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
@@ -1000,16 +999,10 @@ document.addEventListener('DOMContentLoaded', function () {
             document.body.classList.remove(`theme-bg-${activeThemeIndex}`);
             document.body.classList.add(`theme-bg-${newIndex}`);
 
-            if (progressBar) {
-                progressBar.classList.remove(`theme-bg-${activeThemeIndex}`);
-                progressBar.classList.add(`theme-bg-${newIndex}`);
-            }
-
             activeThemeIndex = newIndex;
 
         } else {
             document.body.classList.remove('theme-bg-1', 'theme-bg-2');
-            if (progressBar) progressBar.classList.remove('theme-bg-1', 'theme-bg-2');
 
             // 根据当前主题设置默认颜色
             const currentTheme = document.documentElement.getAttribute('data-theme');
@@ -1446,8 +1439,17 @@ document.addEventListener('DOMContentLoaded', function () {
             if (file.type.startsWith('audio/')) {
                 // 获取文件路径：优先使用 webkitRelativePath（包含文件夹路径），否则使用文件名
                 const filePath = file.webkitRelativePath || file.name;
-                // 检查歌曲列表中是否已有相同路径的文件
-                const existingIndex = songs.findIndex(s => s.path === filePath);
+
+                // 去重键：使用 "文件名|文件大小" 组合作为唯一标识
+                // 原因：
+                // 1. 文件夹选择时 webkitRelativePath 为 "folder/song.mp3"，拖拽/单文件选择时只有 "song.mp3"
+                // 2. 不同子文件夹可能有同名文件，但同名同大小的概率极低
+                // 3. 同文件不同方式添加时，文件名和大小一定相同
+                const dedupeKey = `${file.name}|${file.size}`;
+
+                // 检查歌曲列表中是否已有相同文件
+                const existingIndex = songs.findIndex(s => `${s.name}|${s.size}` === dedupeKey);
+
                 if (existingIndex > -1) {
                     // 已存在：移动到顶部
                     const existingSong = songs[existingIndex];
@@ -1455,7 +1457,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     songs.unshift(existingSong);
                 } else {
                     // 不存在：添加新歌曲，同时存储路径用于去重
-                    newSongs.push({name: file.name, path: filePath, file: file});
+                    newSongs.push({name: file.name, path: filePath, file: file, size: file.size});
                 }
             }
         });
@@ -1466,7 +1468,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // 如果有任何变化（新歌曲或移动的歌曲）
-        if (newSongs.length > 0) {
+        if (newSongs.length > 0 || playingSong) {
             // 清除选中状态，避免旧的 selectedSongs 引用导致问题
             selectedSongs.clear();
             lastSelectedSong = null;
@@ -1502,6 +1504,9 @@ document.addEventListener('DOMContentLoaded', function () {
             songItems.forEach((item, index) => {
                 item.classList.toggle('active', index === currentSongIndex);
             });
+
+            // 滚动到正在播放的歌曲
+            scrollToActiveSong();
         }
     }
 
