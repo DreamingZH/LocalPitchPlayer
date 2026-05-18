@@ -1173,8 +1173,8 @@ document.addEventListener('DOMContentLoaded', function () {
             });
             // 也可以点击主区域关闭侧边栏
             document.getElementById('main-layout').addEventListener('click', (e) => {
-                if(window.innerWidth <= 800 && sidebarLayout.classList.contains('show-mobile')){
-                   sidebarLayout.classList.remove('show-mobile');
+                if (window.innerWidth <= 800 && sidebarLayout.classList.contains('show-mobile')) {
+                    sidebarLayout.classList.remove('show-mobile');
                 }
             });
         }
@@ -1188,13 +1188,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // 拖拽事件绑定到 document，确保从外部拖入文件时能正确触发
-        document.addEventListener('dragover', function(e) {
+        document.addEventListener('dragover', function (e) {
             e.preventDefault();
             e.stopPropagation();
             dragDropZone.classList.add('dragover');
         });
 
-        document.addEventListener('dragleave', function(e) {
+        document.addEventListener('dragleave', function (e) {
             e.preventDefault();
             e.stopPropagation();
             // 只有当鼠标真正离开窗口时才移除 dragover 样式
@@ -1203,7 +1203,7 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         });
 
-        document.addEventListener('drop', function(e) {
+        document.addEventListener('drop', function (e) {
             e.preventDefault();
             e.stopPropagation();
             dragDropZone.classList.remove('dragover');
@@ -1371,10 +1371,10 @@ document.addEventListener('DOMContentLoaded', function () {
                 multiSelectBtn.classList.toggle('active', multiSelectMode);
                 songList.classList.toggle('multi-select-mode', multiSelectMode);
                 if (multiSelectMode) {
-                    if(selectAllBtn) selectAllBtn.classList.remove('hidden');
+                    if (selectAllBtn) selectAllBtn.classList.remove('hidden');
                     updatePlaylistActions();
                 } else {
-                    if(selectAllBtn) selectAllBtn.classList.add('hidden');
+                    if (selectAllBtn) selectAllBtn.classList.add('hidden');
                     selectedSongs.clear();
                     lastSelectedSong = null;
                     const allItems = songList.querySelectorAll('.song-item');
@@ -1777,7 +1777,97 @@ document.addEventListener('DOMContentLoaded', function () {
                 console.log("Filereader error: " + error.err);
             });
         };
-        reader.readAsArrayBuffer(song.file);
+
+        // 新增：处理文件读取失败（如文件已被删除）
+        reader.onerror = () => {
+            console.error("File read error: File may have been deleted.", song.name);
+            handleFileError(song);
+        };
+
+        try {
+            reader.readAsArrayBuffer(song.file);
+        } catch (e) {
+            console.error("Error reading file:", e);
+            handleFileError(song);
+        }
+    }
+
+    // 新增：处理文件失效的逻辑
+    function handleFileError(song) {
+        const indexToRemove = songs.indexOf(song);
+        if (indexToRemove === -1) return;
+
+        // 从列表中移除
+        songs.splice(indexToRemove, 1);
+
+        // 移除 DOM 元素
+        const songItems = songList.querySelectorAll('.song-item');
+        if (songItems[indexToRemove]) {
+            songList.removeChild(songItems[indexToRemove]);
+        }
+
+        // 如果列表为空
+        if (songs.length === 0) {
+            currentSongIndex = 0;
+            if (pitchShifter) {
+                try {
+                    if (typeof pitchShifter.stop === 'function') {
+                        pitchShifter.stop();
+                    } else {
+                        pitchShifter.disconnect();
+                    }
+                } catch (e) {
+                    console.error("Error stopping pitchShifter:", e);
+                }
+                pitchShifter = null;
+            }
+            isPlaying = false;
+            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
+            i18n.updatePageTexts();
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'paused';
+            }
+            progressBar.style.width = '0%';
+            currentAlbumColor = null;
+            updateThemeBackground();
+            resetIcons();
+            const titleText1 = playerTitle.querySelector('.sidebar-title-text');
+            if (titleText1) {
+                titleText1.textContent = 'Music Player';
+                titleText1.style.setProperty('--marquee-distance', '0px');
+            } else {
+                playerTitle.textContent = 'Music Player';
+            }
+            playerTitle.classList.remove('overflow');
+            playerTitle.title = 'Music Player';
+            document.title = 'Music Player';
+            const albumCoverImg = document.getElementById('album-cover');
+            if (albumCoverImg) {
+                albumCoverImg.src = '';
+                albumCoverImg.style.display = 'none';
+            }
+            return;
+        }
+
+        // 如果删除的是当前正在播放（或即将播放）的歌曲
+        if (indexToRemove === currentSongIndex) {
+            // 如果删除的是最后一首，则播放新的最后一首
+            if (currentSongIndex >= songs.length) {
+                currentSongIndex = songs.length - 1;
+            }
+            // 播放下一首（或新的最后一首）
+            playSong(songs[currentSongIndex]);
+        } else if (indexToRemove < currentSongIndex) {
+            // 如果删除的歌曲在当前播放歌曲之前，需要调整索引
+            currentSongIndex--;
+        }
+        // 如果删除的歌曲在当前播放歌曲之后，不需要调整索引，仅删除即可
+
+        // 更新 active 类
+        const updatedSongItems = songList.querySelectorAll('.song-item');
+        updatedSongItems.forEach((item, index) => {
+            item.classList.toggle('active', index === currentSongIndex);
+        });
     }
 
 // 暂停歌曲
@@ -1924,11 +2014,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 // 找到封面文件，读取并显示
                 const coverFile = allFilesMap.get(coverPath);
                 const reader = new FileReader();
-                reader.onload = function(e) {
+                reader.onload = function (e) {
                     const base64 = e.target.result;
                     applyCoverImage(base64, title, tag);
                 };
-                reader.onerror = function() {
+                reader.onerror = function () {
                     // 读取失败，使用默认
                     resetToDefaultCover(title);
                 };
@@ -2073,9 +2163,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // 传递给 Electron 主进程更新应用/任务栏图标
         if (window.require) {
             try {
-                const { ipcRenderer } = window.require('electron');
+                const {ipcRenderer} = window.require('electron');
                 ipcRenderer.send('update-icon', href);
-            } catch(e) {}
+            } catch (e) {
+            }
         }
     }
 
@@ -2089,9 +2180,10 @@ document.addEventListener('DOMContentLoaded', function () {
         // 传递给 Electron 主进程恢复默认图标
         if (window.require) {
             try {
-                const { ipcRenderer } = window.require('electron');
+                const {ipcRenderer} = window.require('electron');
                 ipcRenderer.send('update-icon', null);
-            } catch(e) {}
+            } catch (e) {
+            }
         }
     }
 

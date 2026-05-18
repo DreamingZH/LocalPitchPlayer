@@ -228,6 +228,7 @@ body.theme-bg-2::after {
     .sidebar-title.overflow:hover .sidebar-title-text {
         animation: none;
     }
+
     .sidebar-title.overflow:hover {
         overflow: visible;
     }
@@ -292,10 +293,12 @@ body.theme-bg-2::after {
     align-items: center;
     justify-content: center;
 }
+
 .btn-transparent:hover {
     color: var(--accent);
     transform: scale(1.1);
 }
+
 .btn-transparent.active {
     color: var(--accent);
     background: var(--accent-medium) !important;
@@ -388,6 +391,7 @@ body.theme-bg-2::after {
 .song-list-scroll::-webkit-scrollbar {
     width: 4px;
 }
+
 .song-list-scroll::-webkit-scrollbar-thumb {
     background: var(--border);
     border-radius: 4px;
@@ -513,6 +517,7 @@ body.theme-bg-2::after {
     color: white;
     box-shadow: 0 4px 12px rgba(var(--theme-color-rgb-current), 0.25);
 }
+
 .song-item.active i {
     color: white;
 }
@@ -558,6 +563,7 @@ body.theme-bg-2::after {
     user-select: none;
     margin-top: 4px;
 }
+
 .lang-toggle:hover {
     background: var(--accent-light);
     color: var(--accent);
@@ -579,6 +585,7 @@ body.theme-bg-2::after {
     justify-content: center;
     margin-top: 4px; /* 新增：向下移动 */
 }
+
 .toggle-playlist-btn:hover {
     background: var(--accent-light);
     color: var(--accent);
@@ -665,7 +672,7 @@ body.theme-bg-2::after {
     z-index: 20;
     position: relative;
     overflow: hidden;
-    box-shadow: 0 -4px 20px rgba(0,0,0,0.02);
+    box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.02);
     gap: 12px;
     transition: background-color var(--transition-slow), border-color var(--transition-slow), color var(--transition-slow);
 }
@@ -701,10 +708,12 @@ body.theme-bg-2::after {
     border-radius: 50%;
     flex-shrink: 0;
 }
+
 .btn-icon:hover {
     color: var(--accent);
     background: var(--accent-light);
 }
+
 .btn-icon.active {
     color: var(--accent);
     background: var(--accent-light);
@@ -720,6 +729,7 @@ body.theme-bg-2::after {
     box-shadow: 0 4px 12px rgba(var(--theme-color-rgb-current), 0.3);
     transition: all var(--transition-fast), background var(--transition-slow);
 }
+
 .play-btn:hover {
     background: var(--accent-hover);
     color: white;
@@ -824,7 +834,7 @@ body.theme-bg-2::after {
     background: var(--accent);
     cursor: pointer;
     transition: transform 0.1s, background var(--transition-slow);
-    box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
 .val-display {
@@ -850,6 +860,7 @@ body.theme-bg-2::after {
         grid-template-columns: 1fr;
         grid-template-rows: 1fr auto;
     }
+
     .sidebar-layout {
         position: relative;
         left: -100vw;
@@ -862,14 +873,17 @@ body.theme-bg-2::after {
         display: flex;
         resize: none;
     }
+
     .sidebar-layout.show-mobile {
         left: 0;
         transition: var(--transition-slow);
     }
+
     .sidebar-layout.show-mobile + .main-layout .top-bar {
         z-index: 20;
         pointer-events: none;
     }
+
     .sidebar-layout.show-mobile + .main-layout .toggle-playlist-btn {
         position: fixed;
         right: 24px;
@@ -880,20 +894,25 @@ body.theme-bg-2::after {
         z-index: 25;
         pointer-events: auto;
     }
+
     .sidebar-layout.show-mobile + .main-layout .toggle-playlist-btn:hover {
         background: var(--accent-light);
         color: var(--accent);
     }
+
     .sidebar-layout.show-mobile + .main-layout .lang-toggle {
         display: none;
     }
+
     .main-layout {
         grid-column: 1 / 3;
     }
+
     .center-content {
         padding-bottom: 20px;
         padding-top: 60px;
     }
+
     .cover-area {
         min-width: 280px;
         min-height: 280px;
@@ -902,6 +921,7 @@ body.theme-bg-2::after {
         max-width: 380px;
         max-height: 380px;
     }
+
     .bottom-bar {
         flex-wrap: wrap;
         padding: 12px 12px 18px 12px;
@@ -910,6 +930,7 @@ body.theme-bg-2::after {
         justify-content: space-between;
         z-index: 20;
     }
+
     .playback-controls {
         order: 1;
         width: 100%;
@@ -919,18 +940,21 @@ body.theme-bg-2::after {
         align-items: center;
         flex: 1 1 100%;
     }
+
     .player-controls {
         order: 1;
         width: 100%;
         justify-content: center;
         margin-bottom: 0px;
     }
+
     .progress-container {
         order: 2;
         width: 100%;
         margin-top: 8px;
         position: relative;
     }
+
     .extra-controls {
         display: flex;
         width: auto;
@@ -940,12 +964,15 @@ body.theme-bg-2::after {
         gap: 8px;
         flex: 0 0 auto;
     }
+
     .left-tools {
         order: 2;
     }
+
     .right-tools {
         order: 3;
     }
+
     .now-playing-info {
         display: none;
     }
@@ -983,6 +1010,7 @@ body.theme-bg-2::after {
         padding: 10px;
         margin: 8px 0;
     }
+
     .drag-drop-zone p {
         margin: 0;
         font-size: 0.8rem;
