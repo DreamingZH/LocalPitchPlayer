@@ -1765,7 +1765,16 @@ document.addEventListener('DOMContentLoaded', function () {
                 play()
 
                 updateTitle(song.name);
-                updatePageIcon(song.file, song.name); // 新增：更新网页图标及媒体会话信息
+
+                // 根据歌曲类型选择不同的封面加载方式
+                if (song.isOnline) {
+                    // 在线歌曲：从缓存加载封面
+                    loadOnlineCover(song);
+                } else {
+                    // 本地歌曲：从文件读取封面
+                    updatePageIcon(song.file, song.name);
+                }
+
                 scrollToActiveSong();
 
                 const songItems = songList.querySelectorAll('.song-item');
@@ -1831,6 +1840,7 @@ document.addEventListener('DOMContentLoaded', function () {
             currentAlbumColor = null;
             updateThemeBackground();
             resetIcons();
+            // 恢复默认标题
             const titleText1 = playerTitle.querySelector('.sidebar-title-text');
             if (titleText1) {
                 titleText1.textContent = 'Music Player';
@@ -1841,6 +1851,7 @@ document.addEventListener('DOMContentLoaded', function () {
             playerTitle.classList.remove('overflow');
             playerTitle.title = 'Music Player';
             document.title = 'Music Player';
+            // 隐藏专辑封面
             const albumCoverImg = document.getElementById('album-cover');
             if (albumCoverImg) {
                 albumCoverImg.src = '';
@@ -2033,11 +2044,14 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 应用封面图片到界面
     function applyCoverImage(base64, title, tag) {
+        const artist = tag?.tags?.artist || 'Unknown Artist';
+        const album = tag?.tags?.album || 'Unknown Album';
+
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
-                title: tag?.tags?.title || title,
-                artist: tag?.tags?.artist || 'Unknown Artist',
-                album: tag?.tags?.album || 'Unknown Album',
+                title: title,
+                artist: artist,
+                album: album,
                 artwork: [
                     {src: base64, sizes: '512x512', type: 'image/jpeg'}
                 ]
@@ -2206,11 +2220,219 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // ========== 在线歌曲播放支持 ==========
+    // 添加在线歌曲到播放列表并播放
+    function playOnlineSong(songData) {
+        if (!songData) return;
+
+        // 去重检查：检查是否已存在相同歌曲
+        const dedupeKey = `${songData.name}|${songData.size}`;
+        const existingIndex = songs.findIndex(s => `${s.name}|${s.size}` === dedupeKey);
+
+        if (existingIndex > -1) {
+            // 已存在：直接播放
+            currentSongIndex = existingIndex;
+            currentSeek = 0;
+            playSong(songs[currentSongIndex]);
+        } else {
+            // 不存在：添加到列表顶部并播放
+            songs.unshift(songData);
+            currentSongIndex = 0;
+            currentSeek = 0;
+
+            // 重新渲染列表
+            songList.innerHTML = '';
+            songs.forEach(song => {
+                const listItem = createSongListItem(song);
+                songList.appendChild(listItem);
+            });
+
+            playSong(songs[currentSongIndex]);
+        }
+
+        // 更新 active 类
+        const songItems = songList.querySelectorAll('.song-item');
+        songItems.forEach((item, index) => {
+            item.classList.toggle('active', index === currentSongIndex);
+        });
+
+        // 滚动到正在播放的歌曲
+        scrollToActiveSong();
+    }
+
+    // 从缓存加载在线歌曲封面
+    function loadOnlineCover(song) {
+        if (!song.isOnline || !song.onlineInfo) return;
+
+        const {id, server} = song.onlineInfo;
+        const coverKey = `cover_${server}_${id}`;
+
+        // 检查是否有预加载的封面 blob（从 secret-player 传递过来的）
+        if (song.coverBlob) {
+            const reader = new FileReader();
+            reader.onload = function (e) {
+                const base64 = e.target.result;
+                applyOnlineCover(base64, song);
+            };
+            reader.readAsDataURL(song.coverBlob);
+            return;
+        }
+
+        // 从 IndexedDB 加载封面
+        loadCoverFromCache(coverKey, song);
+    }
+
+    // 从 IndexedDB 缓存加载封面
+    function loadCoverFromCache(coverKey, song) {
+        const request = indexedDB.open('SecretPlayerCache', 1);
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('coverCache')) {
+                db.createObjectStore('coverCache', {keyPath: 'id'});
+            }
+        };
+        request.onsuccess = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('coverCache')) {
+                // 没有封面缓存存储，使用默认封面
+                applyDefaultOnlineCover(song);
+                return;
+            }
+            const tx = db.transaction('coverCache', 'readonly');
+            const store = tx.objectStore('coverCache');
+            const getRequest = store.get(coverKey);
+            getRequest.onsuccess = () => {
+                const result = getRequest.result;
+                if (result && result.blob && result.blob.size > 0) {
+                    const reader = new FileReader();
+                    reader.onload = function (e) {
+                        const base64 = e.target.result;
+                        applyOnlineCover(base64, song);
+                    };
+                    reader.readAsDataURL(result.blob);
+                } else {
+                    // 缓存中没有封面，使用默认封面
+                    applyDefaultOnlineCover(song);
+                }
+            };
+            getRequest.onerror = () => {
+                applyDefaultOnlineCover(song);
+            };
+        };
+        request.onerror = () => {
+            applyDefaultOnlineCover(song);
+        };
+    }
+
+    // 应用在线歌曲封面到界面
+    function applyOnlineCover(base64, song) {
+        const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
+        const artist = song.onlineInfo?.artist || 'Unknown Artist';
+        const album = song.onlineInfo?.album || 'Unknown Album';
+
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title,
+                artist: artist,
+                album: album,
+                artwork: [
+                    {src: base64, sizes: '512x512', type: 'image/jpeg'}
+                ]
+            });
+        }
+
+        const img = new Image();
+        img.onload = function () {
+            currentAlbumColor = getAverageColor(img);
+            updateThemeBackground();
+
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const size = 64;
+            const radius = 16;
+            canvas.width = size;
+            canvas.height = size;
+
+            ctx.beginPath();
+            ctx.moveTo(radius, 0);
+            ctx.lineTo(size - radius, 0);
+            ctx.quadraticCurveTo(size, 0, size, radius);
+            ctx.lineTo(size, size - radius);
+            ctx.quadraticCurveTo(size, size, size - radius, size);
+            ctx.lineTo(radius, size);
+            ctx.quadraticCurveTo(0, size, 0, size - radius);
+            ctx.lineTo(0, radius);
+            ctx.quadraticCurveTo(0, 0, radius, 0);
+            ctx.closePath();
+            ctx.clip();
+
+            ctx.drawImage(img, 0, 0, size, size);
+            setAllIcons(canvas.toDataURL('image/png'));
+        };
+        img.src = base64;
+
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = base64;
+            albumCoverImg.style.display = 'block';
+        }
+    }
+
+    // 应用默认在线歌曲封面（无封面时）
+    function applyDefaultOnlineCover(song) {
+        const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
+        const artist = song.onlineInfo?.artist || 'Unknown Artist';
+        const album = song.onlineInfo?.album || 'Unknown Album';
+
+        currentAlbumColor = null;
+        updateThemeBackground();
+        resetIcons();
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = '';
+            albumCoverImg.style.display = 'none';
+        }
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: title,
+                artist: artist,
+                album: album
+            });
+        }
+    }
+
+    // 检查秘密面板是否可见
+    function isSecretPanelVisible() {
+        if (window.SecretPlayer && typeof window.SecretPlayer.isVisible === 'function') {
+            return window.SecretPlayer.isVisible();
+        }
+        return false;
+    }
+
     initTheme();
     setupAudioPlayer();
 
     document.addEventListener('keydown', function (event) {
         if (!event.key) {
+            return;
+        }
+
+        // 如果秘密面板可见，阻止主界面快捷键（除了 ESC 和 F）
+        if (isSecretPanelVisible()) {
+            const key = event.key.toLowerCase();
+            // 只允许 ESC 关闭面板，其他快捷键全部阻止
+            if (key === 'escape') {
+                // 让 secret-player 处理 ESC
+                return;
+            }
+            // 如果焦点在秘密搜索框内，不处理
+            const secretSearchInput = document.getElementById('secret-search-input');
+            if (document.activeElement === secretSearchInput) {
+                return;
+            }
+            // 阻止所有其他快捷键
+            event.preventDefault();
+            event.stopPropagation();
             return;
         }
 
@@ -2415,4 +2637,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     preventMobileZoom();
+
+    // 导出主播放器接口供 secret-player 使用
+    window.MainPlayer = {
+        playOnlineSong: playOnlineSong,
+    };
 })
