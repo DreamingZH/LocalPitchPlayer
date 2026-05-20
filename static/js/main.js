@@ -1718,6 +1718,13 @@ document.addEventListener('DOMContentLoaded', function () {
             sidebarLayout.classList.remove('show-mobile');
         }
 
+        // 在线歌曲：从缓存或网络加载
+        if (song.isOnline) {
+            playOnlineSongFromCache(song);
+            return;
+        }
+
+        // 本地歌曲：从文件读取
         const currentRequestId = ++loadRequestId;
 
         if (pitchShifter) {
@@ -1766,14 +1773,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                 updateTitle(song.name);
 
-                // 根据歌曲类型选择不同的封面加载方式
-                if (song.isOnline) {
-                    // 在线歌曲：从缓存加载封面
-                    loadOnlineCover(song);
-                } else {
-                    // 本地歌曲：从文件读取封面
-                    updatePageIcon(song.file, song.name);
-                }
+                // 本地歌曲：从文件读取封面
+                updatePageIcon(song.file, song.name);
 
                 scrollToActiveSong();
 
@@ -1787,7 +1788,6 @@ document.addEventListener('DOMContentLoaded', function () {
             });
         };
 
-        // 新增：处理文件读取失败（如文件已被删除）
         reader.onerror = () => {
             console.error("File read error: File may have been deleted.", song.name);
             handleFileError(song);
@@ -2046,6 +2046,15 @@ document.addEventListener('DOMContentLoaded', function () {
     function applyCoverImage(base64, title, tag) {
         const artist = tag?.tags?.artist || 'Unknown Artist';
         const album = tag?.tags?.album || 'Unknown Album';
+        // 尝试从 tag 中获取实际图片格式，否则根据 base64 前缀判断，默认 jpeg
+        let imageType = 'image/jpeg';
+        if (tag?.tags?.picture?.format) {
+            imageType = tag.tags.picture.format;
+        } else if (base64.startsWith('data:image/png')) {
+            imageType = 'image/png';
+        } else if (base64.startsWith('data:image/webp')) {
+            imageType = 'image/webp';
+        }
 
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -2053,7 +2062,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 artist: artist,
                 album: album,
                 artwork: [
-                    {src: base64, sizes: '512x512', type: 'image/jpeg'}
+                    {src: base64, sizes: '512x512', type: imageType}
                 ]
             });
         }
@@ -2222,7 +2231,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // ========== 在线歌曲播放支持 ==========
     // 添加在线歌曲到播放列表并播放
-    function playOnlineSong(songData) {
+    // blob: 首次添加时的音频数据（可选），用于立即播放
+    function playOnlineSong(songData, blob = null) {
         if (!songData) return;
 
         // 去重检查：检查是否已存在相同歌曲
@@ -2247,7 +2257,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 songList.appendChild(listItem);
             });
 
-            playSong(songs[currentSongIndex]);
+            // 如果有 blob（首次添加），直接播放；否则从缓存/网络加载
+            if (blob) {
+                playOnlineSongFromBlob(songs[currentSongIndex], blob);
+            } else {
+                playOnlineSongFromCache(songs[currentSongIndex]);
+            }
         }
 
         // 更新 active 类
@@ -2258,6 +2273,278 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 滚动到正在播放的歌曲
         scrollToActiveSong();
+    }
+
+    // 从 blob 直接播放在线歌曲（首次添加时使用）
+    function playOnlineSongFromBlob(song, blob) {
+        if (!song || !blob) return;
+
+        const currentRequestId = ++loadRequestId;
+
+        if (pitchShifter) {
+            try {
+                if (typeof pitchShifter.stop === 'function') {
+                    pitchShifter.stop();
+                } else {
+                    pitchShifter.disconnect();
+                }
+            } catch (e) {
+                console.error("Error stopping pitchShifter:", e);
+            }
+            pitchShifter = null;
+        }
+
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        gainNode = audioContext.createGain();
+
+        // 将 blob 转为 ArrayBuffer
+        blob.arrayBuffer().then(arrayBuffer => {
+            if (currentRequestId !== loadRequestId) return;
+            audioContext.decodeAudioData(arrayBuffer, function (audioBuffer) {
+                if (currentRequestId !== loadRequestId) return;
+                setupPitchShifter(audioBuffer, song);
+            }, function (error) {
+                console.log("Decode error: " + error.err);
+                // 解码失败，尝试重新下载
+                playOnlineSongFromCache(song);
+            });
+        }).catch(e => {
+            console.error("Blob read error:", e);
+            playOnlineSongFromCache(song);
+        });
+    }
+
+    // 从缓存或网络加载在线歌曲
+    function playOnlineSongFromCache(song) {
+        if (!song || !song.isOnline || !song.onlineInfo) return;
+
+        const {id, server} = song.onlineInfo;
+        const currentRequestId = ++loadRequestId;
+
+        if (pitchShifter) {
+            try {
+                if (typeof pitchShifter.stop === 'function') {
+                    pitchShifter.stop();
+                } else {
+                    pitchShifter.disconnect();
+                }
+            } catch (e) {
+                console.error("Error stopping pitchShifter:", e);
+            }
+            pitchShifter = null;
+        }
+
+        if (audioContext.state === 'suspended') {
+            audioContext.resume();
+        }
+        gainNode = audioContext.createGain();
+
+        // 尝试从 IndexedDB 缓存加载
+        const cacheKey = `song_${server}_${id}_${song.onlineInfo.br}`;
+        const request = indexedDB.open('SecretPlayerCache', 1);
+
+        request.onupgradeneeded = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('audioCache')) {
+                const store = db.createObjectStore('audioCache', {keyPath: 'id'});
+                store.createIndex('timestamp', 'timestamp', {unique: false});
+            }
+        };
+
+        request.onsuccess = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('audioCache')) {
+                // 没有缓存存储，重新下载
+                downloadAndPlayOnlineSong(song, currentRequestId);
+                return;
+            }
+
+            const tx = db.transaction('audioCache', 'readonly');
+            const store = tx.objectStore('audioCache');
+            const getRequest = store.get(cacheKey);
+
+            getRequest.onsuccess = () => {
+                const result = getRequest.result;
+                if (result && result.blob && result.blob.size > 0) {
+                    // 缓存命中
+                    console.log(`[缓存命中] ${song.onlineInfo.originalName} @ ${song.onlineInfo.br}kbps`);
+                    playBlob(result.blob, song, currentRequestId);
+                } else {
+                    // 缓存未命中，尝试其他音质
+                    tryLoadOtherQuality(song, db, currentRequestId);
+                }
+            };
+
+            getRequest.onerror = () => {
+                downloadAndPlayOnlineSong(song, currentRequestId);
+            };
+        };
+
+        request.onerror = () => {
+            downloadAndPlayOnlineSong(song, currentRequestId);
+        };
+    }
+
+    // 尝试加载其他音质的缓存
+    function tryLoadOtherQuality(song, db, currentRequestId) {
+        const {id, server} = song.onlineInfo;
+        const brFallback = [400, 380, 320, 128];
+
+        const tx = db.transaction('audioCache', 'readonly');
+        const store = tx.objectStore('audioCache');
+
+        // 遍历所有音质查找缓存
+        let found = false;
+        let pendingCount = brFallback.length;
+        let downloading = false; // 防止重复下载
+
+        brFallback.forEach(br => {
+            const cacheKey = `song_${server}_${id}_${br}`;
+            const getRequest = store.get(cacheKey);
+            getRequest.onsuccess = () => {
+                pendingCount--;
+                if (!found && getRequest.result && getRequest.result.blob && getRequest.result.blob.size > 0) {
+                    found = true;
+                    console.log(`[缓存命中-其他音质] ${song.onlineInfo.originalName} @ ${br}kbps`);
+                    playBlob(getRequest.result.blob, song, currentRequestId);
+                } else if (pendingCount === 0 && !found && !downloading) {
+                    // 所有音质都没有缓存，重新下载
+                    downloading = true;
+                    downloadAndPlayOnlineSong(song, currentRequestId);
+                }
+            };
+            getRequest.onerror = () => {
+                pendingCount--;
+                if (pendingCount === 0 && !found && !downloading) {
+                    downloading = true;
+                    downloadAndPlayOnlineSong(song, currentRequestId);
+                }
+            };
+        });
+    }
+
+    // 下载在线歌曲并播放
+    async function downloadAndPlayOnlineSong(song, requestId) {
+        if (!song || !song.isOnline || !song.onlineInfo) return;
+
+        const {id, server} = song.onlineInfo;
+        const brFallback = [400, 380, 320, 128];
+
+        console.log(`[重新下载] ${song.onlineInfo.originalName}`);
+
+        for (const br of brFallback) {
+            try {
+                const url = `${atob('aHR0cHM6Ly9hcGkuYmFrYS5wbHVzL21ldGluZy8=')}?server=${server}&type=url&id=${id}&br=${br}`;
+                const res = await fetch(url, {redirect: 'follow'});
+                if (!res.ok) continue;
+
+                const audioUrl = res.url;
+                if (!audioUrl || audioUrl.includes('.html') || audioUrl.includes('error')) continue;
+
+                const response = await fetch(audioUrl);
+                if (!response.ok) continue;
+
+                const blob = await response.blob();
+                if (blob.size < 1000) continue;
+
+                // 保存到缓存
+                const cacheKey = `song_${server}_${id}_${br}`;
+                saveBlobToCache(cacheKey, blob, song);
+
+                if (requestId === loadRequestId) {
+                    playBlob(blob, song, requestId);
+                }
+                return;
+            } catch (e) {
+                console.warn(`下载音质 ${br} 失败:`, e.message);
+            }
+        }
+
+        if (requestId === loadRequestId) {
+            console.error('所有音质下载均失败');
+        }
+    }
+
+    // 将 blob 保存到 IndexedDB 缓存
+    function saveBlobToCache(cacheKey, blob, song) {
+        const request = indexedDB.open('SecretPlayerCache', 1);
+        request.onsuccess = (e) => {
+            const db = e.target.result;
+            if (!db.objectStoreNames.contains('audioCache')) return;
+
+            const tx = db.transaction('audioCache', 'readwrite');
+            const store = tx.objectStore('audioCache');
+            const entry = {
+                id: cacheKey,
+                blob: blob,
+                size: blob.size,
+                type: blob.type,
+                timestamp: Date.now(),
+                songInfo: {
+                    name: song.onlineInfo.originalName,
+                    artist: song.onlineInfo.artist,
+                    album: song.onlineInfo.album,
+                    br: song.onlineInfo.br,
+                }
+            };
+            store.put(entry);
+        };
+    }
+
+    // 播放 blob 数据
+    function playBlob(blob, song, currentRequestId) {
+        blob.arrayBuffer().then(arrayBuffer => {
+            if (currentRequestId !== loadRequestId) return;
+            audioContext.decodeAudioData(arrayBuffer, function (audioBuffer) {
+                if (currentRequestId !== loadRequestId) return;
+                setupPitchShifter(audioBuffer, song);
+            }, function (error) {
+                console.log("Decode error: " + error.err);
+            });
+        }).catch(e => {
+            console.error("Blob read error:", e);
+        });
+    }
+
+    // 设置 PitchShifter 并开始播放
+    function setupPitchShifter(audioBuffer, song) {
+        const bufferSize = 16384;
+        const ps = new PitchShifter(audioContext, audioBuffer, bufferSize);
+        pitchShifter = ps;
+        ps.pitch = Math.pow(2.0, currentPitchShift / 12.0);
+        ps.tempo = currentTempoShift;
+        ps.on('play', (detail) => {
+            currentSeek = parseFloat(detail.timePlayed);
+            updateProgress(currentSeek, ps.duration);
+            if (detail.formattedTimePlayed >= ps.formattedDuration) {
+                if (isLooping) {
+                    ps.percentagePlayed = 0;
+                    currentSeek = 0;
+                } else {
+                    handleNextSong();
+                }
+            }
+        });
+
+        play();
+
+        updateTitle(song.name);
+
+        // 加载封面
+        if (song.isOnline) {
+            loadOnlineCover(song);
+        } else {
+            updatePageIcon(song.file, song.name);
+        }
+
+        scrollToActiveSong();
+
+        const songItems = songList.querySelectorAll('.song-item');
+        songItems.forEach((item, index) => {
+            item.classList.toggle('active', index === currentSongIndex);
+        });
     }
 
     // 从缓存加载在线歌曲封面

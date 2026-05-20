@@ -677,19 +677,17 @@ let SecretPlayer = (function () {
 
             updateDownloadProgress(80, fromCache ? '从缓存加载...' : '正在处理...');
 
-            // 创建 File 对象（使用 blob）
+            // 构建歌曲数据（不保存 File 对象，只保存元信息）
             const fileName = `${song.name || song.title || 'unknown'}_${song.artist || 'unknown'}.mp3`;
-            const file = new File([blob], fileName, {type: blob.type || 'audio/mpeg'});
 
             updateDownloadProgress(100, '添加到播放列表...');
 
             // 构建歌曲数据
             const songData = {
                 name: fileName,
-                file: file,
                 size: blob.size,
                 isOnline: true,
-                coverBlob: coverBlob, // 新增：传递封面 blob
+                coverBlob: coverBlob, // 传递封面 blob（仅首次添加时使用）
                 onlineInfo: {
                     id: songId,
                     server: server,
@@ -702,7 +700,7 @@ let SecretPlayer = (function () {
             };
 
             // 调用主播放器的方法添加并播放
-            mainPlayer.playOnlineSong(songData);
+            mainPlayer.playOnlineSong(songData, blob);
 
             // 高亮当前添加的歌曲
             highlightAddedItem(index);
