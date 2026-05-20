@@ -28,7 +28,7 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
-      run: npm ci --omit=dev
+      run: npm install
 
     - name: Build Electron app (Windows)
       if: matrix.os == 'windows-latest'

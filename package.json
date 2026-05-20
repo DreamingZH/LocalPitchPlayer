@@ -10,21 +10,6 @@
   "build": {
     "appId": "com.dreamingzh.localpitchplayer",
     "productName": "Local Pitch Player",
-    "files": [
-      "electron-main.js",
-      "index.html",
-      "static/**/*",
-      "LocalPitchPlayer.png",
-      "!**/*.md",
-      "!**/*.drawio",
-      "!.github",
-      "!.git",
-      "!.idea",
-      "!server.py",
-      "!LICENSE"
-    ],
-    "asar": true,
-    "compression": "maximum",
     "mac": {
       "target": [
         "dmg",
@@ -38,11 +23,6 @@
         "appx"
       ],
       "icon": "LocalPitchPlayer.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "deleteAppDataOnUninstall": true
     },
     "appx": {
       "publisher": "CN=835067E0-AEF3-4EA6-8BDC-F991C7DA35CC",
