@@ -2267,7 +2267,7 @@ document.addEventListener('DOMContentLoaded', function () {
         const {id, server} = song.onlineInfo;
         const coverKey = `cover_${server}_${id}`;
 
-        // 检查是否有预加载的封面 blob（从 secret-player 传递过来的）
+        // 检查是否有预加载的封面 blob（从 player 传递过来的）
         if (song.coverBlob) {
             const reader = new FileReader();
             reader.onload = function (e) {
@@ -2401,7 +2401,7 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // 检查秘密面板是否可见
+    // 检查面板是否可见
     function isSecretPanelVisible() {
         if (window.SecretPlayer && typeof window.SecretPlayer.isVisible === 'function') {
             return window.SecretPlayer.isVisible();
@@ -2417,15 +2417,15 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // 如果秘密面板可见，阻止主界面快捷键（除了 ESC 和 F）
+        // 如果面板可见，阻止主界面快捷键（除了 ESC 和 F）
         if (isSecretPanelVisible()) {
             const key = event.key.toLowerCase();
             // 只允许 ESC 关闭面板，其他快捷键全部阻止
             if (key === 'escape') {
-                // 让 secret-player 处理 ESC
+                // 让 player 处理 ESC
                 return;
             }
-            // 如果焦点在秘密搜索框内，不处理
+            // 如果焦点在搜索框内，不处理
             const secretSearchInput = document.getElementById('secret-search-input');
             if (document.activeElement === secretSearchInput) {
                 return;
@@ -2638,7 +2638,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     preventMobileZoom();
 
-    // 导出主播放器接口供 secret-player 使用
+    // 导出主播放器接口供 player 使用
     window.MainPlayer = {
         playOnlineSong: playOnlineSong,
     };

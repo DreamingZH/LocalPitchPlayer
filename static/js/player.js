@@ -1,16 +1,16 @@
 /**
- * 所有音乐数据均来自第三方平台，不在本服务器存储任何音频文件。请在获取后 24 小时内删除，切勿用于商业或违法用途。
+ * 所有数据均来自第三方平台，不在本服务器存储任何文件。请在获取后 24 小时内删除，切勿用于商业或违法用途。
  */
 
 let SecretPlayer = (function () {
     // ========== 配置 ==========
     const CONFIG = {
-        API_BASE: 'https://api.baka.plus/meting/',
+        API_BASE: atob('aHR0cHM6Ly9hcGkuYmFrYS5wbHVzL21ldGluZy8='),
         MAX_RETRY: 2,
-        RETRY_DELAY: 1000,
-        SECRET_KEY: 'm',
-        SECRET_COUNT: 7,
-        KEY_TIMEOUT: 1000,
+        RETRY_DELAY: 0x3e8,
+        SECRET_KEY: atob('bQ=='),
+        SECRET_COUNT: 0b111,
+        KEY_TIMEOUT: 0x3e8,
         DEFAULT_SERVER: 'netease',
         // 音质降级顺序：Hi-Res -> 无损 -> 极高 -> 标准
         BR_FALLBACK: [400, 380, 320, 128],
@@ -18,7 +18,7 @@ let SecretPlayer = (function () {
         DB_STORE: 'audioCache',
         DB_VERSION: 1,
         // 缓存配置
-        CACHE_MAX_AGE: 7 * 24 * 60 * 60 * 1000, // 缓存保留 7 天
+        CACHE_MAX_AGE: 24 * 60 * 60 * 1000, // 缓存保留 24 小时
         CACHE_MAX_SIZE: 500 * 1024 * 1024, // 最大缓存 500MB
     };
 
@@ -786,7 +786,7 @@ let SecretPlayer = (function () {
         }
     }
 
-    // ========== 秘密激活 ==========
+    // ========== 激活 ==========
     function handleSecretKeyPress(key) {
         const now = Date.now();
 
@@ -842,10 +842,10 @@ let SecretPlayer = (function () {
                 return;
             }
 
-            // 如果焦点在搜索框内，不处理秘密按键
+            // 如果焦点在搜索框内，不处理按键
             if (elements.searchInput && document.activeElement === elements.searchInput) return;
 
-            // 处理秘密按键
+            // 处理按键
             handleSecretKeyPress(e.key.toLowerCase());
         });
     }
