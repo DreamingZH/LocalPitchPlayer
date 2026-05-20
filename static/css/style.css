@@ -872,6 +872,7 @@ body.theme-bg-2::after {
         transition: left 0.3s ease;
         display: flex;
         resize: none;
+        min-width: 0;
     }
 
     .sidebar-layout.show-mobile {
