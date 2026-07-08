@@ -169,6 +169,11 @@ class RateTransposer extends AbstractFifoSamplePipe {
         this.slopeCount = 0;
         this.prevSampleL = 0;
         this.prevSampleR = 0;
+        this._aaLastRate = 0;
+        this._aaX1L = 0; this._aaX2L = 0;
+        this._aaY1L = 0; this._aaY2L = 0;
+        this._aaX1R = 0; this._aaX2R = 0;
+        this._aaY1R = 0; this._aaY2R = 0;
     }
 
     clone() {
@@ -180,9 +185,48 @@ class RateTransposer extends AbstractFifoSamplePipe {
     process() {
         const numFrames = this._inputBuffer.frameCount;
         this._outputBuffer.ensureAdditionalCapacity(numFrames / this._rate + 1);
+        if (this._rate > 1.0) {
+            this._applyAntiAlias(numFrames);
+        }
         const numFramesOutput = this.transpose(numFrames);
         this._inputBuffer.receive();
         this._outputBuffer.put(numFramesOutput);
+    }
+
+    _applyAntiAlias(numFrames) {
+        if (this._rate <= 1.0) return;
+        const src = this._inputBuffer.vector;
+        const offset = this._inputBuffer.startIndex;
+
+        if (this._rate !== this._aaLastRate) {
+            const w0 = Math.PI / this._rate;
+            const cosw0 = Math.cos(w0);
+            const sinw0 = Math.sin(w0);
+            const alpha = sinw0 / 1.414;
+            const a0 = 1 + alpha;
+            this._aa_b0 = (1 - cosw0) / (2 * a0);
+            this._aa_b1 = (1 - cosw0) / a0;
+            this._aa_b2 = this._aa_b0;
+            this._aa_a1 = (-2 * cosw0) / a0;
+            this._aa_a2 = (1 - alpha) / a0;
+            this._aaLastRate = this._rate;
+        }
+
+        for (let i = 0; i < numFrames; i++) {
+            const idx = offset + 2 * i;
+            const inL = src[idx];
+            const inR = src[idx + 1];
+            const outL = this._aa_b0 * inL + this._aa_b1 * this._aaX1L + this._aa_b2 * this._aaX2L
+                       - this._aa_a1 * this._aaY1L - this._aa_a2 * this._aaY2L;
+            const outR = this._aa_b0 * inR + this._aa_b1 * this._aaX1R + this._aa_b2 * this._aaX2R
+                       - this._aa_a1 * this._aaY1R - this._aa_a2 * this._aaY2R;
+            this._aaX2L = this._aaX1L; this._aaX1L = inL;
+            this._aaY2L = this._aaY1L; this._aaY1L = outL;
+            this._aaX2R = this._aaX1R; this._aaX1R = inR;
+            this._aaY2R = this._aaY1R; this._aaY1R = outR;
+            src[idx] = outL;
+            src[idx + 1] = outR;
+        }
     }
 
     transpose(numFrames = 0) {
@@ -212,8 +256,26 @@ class RateTransposer extends AbstractFifoSamplePipe {
                     }
                 }
                 const srcIndex = srcOffset + 2 * used;
-                dest[destOffset + 2 * i] = (1.0 - this.slopeCount) * src[srcIndex] + this.slopeCount * src[srcIndex + 2];
-                dest[destOffset + 2 * i + 1] = (1.0 - this.slopeCount) * src[srcIndex + 1] + this.slopeCount * src[srcIndex + 3];
+                if (used >= 1 && used < numFrames - 2) {
+                    const t = this.slopeCount;
+                    const t2 = t * t;
+                    const t3 = t2 * t;
+                    dest[destOffset + 2 * i] = 0.5 * (
+                        (2 * src[srcIndex]) +
+                        (-src[srcIndex - 2] + src[srcIndex + 2]) * t +
+                        (2 * src[srcIndex - 2] - 5 * src[srcIndex] + 4 * src[srcIndex + 2] - src[srcIndex + 4]) * t2 +
+                        (-src[srcIndex - 2] + 3 * src[srcIndex] - 3 * src[srcIndex + 2] + src[srcIndex + 4]) * t3
+                    );
+                    dest[destOffset + 2 * i + 1] = 0.5 * (
+                        (2 * src[srcIndex + 1]) +
+                        (-src[srcIndex - 1] + src[srcIndex + 3]) * t +
+                        (2 * src[srcIndex - 1] - 5 * src[srcIndex + 1] + 4 * src[srcIndex + 3] - src[srcIndex + 5]) * t2 +
+                        (-src[srcIndex - 1] + 3 * src[srcIndex + 1] - 3 * src[srcIndex + 3] + src[srcIndex + 5]) * t3
+                    );
+                } else {
+                    dest[destOffset + 2 * i] = (1.0 - this.slopeCount) * src[srcIndex] + this.slopeCount * src[srcIndex + 2];
+                    dest[destOffset + 2 * i + 1] = (1.0 - this.slopeCount) * src[srcIndex + 1] + this.slopeCount * src[srcIndex + 3];
+                }
                 i = i + 1;
                 this.slopeCount += this._rate;
             }
@@ -274,6 +336,16 @@ class SimpleFilter extends FilterSupport {
         this._sourcePosition = 0;
         this.outputBufferPosition = 0;
         this._position = 0;
+        this._preFilterPitch = 1.0;
+        this._pfLastRate = 0;
+        this._pfX1L = 0; this._pfX2L = 0;
+        this._pfY1L = 0; this._pfY2L = 0;
+        this._pfX1R = 0; this._pfX2R = 0;
+        this._pfY1R = 0; this._pfY2R = 0;
+    }
+
+    set pitch(p) {
+        this._preFilterPitch = p;
     }
 
     get position() {
@@ -309,7 +381,40 @@ class SimpleFilter extends FilterSupport {
         const samples = new Float32Array(numFrames * 2);
         const numFramesExtracted = this.sourceSound.extract(samples, numFrames, this._sourcePosition);
         this._sourcePosition += numFramesExtracted;
+        if (this._preFilterPitch > 1.0 && numFramesExtracted > 0) {
+            this._applyPreFilter(samples, numFramesExtracted);
+        }
         this.inputBuffer.putSamples(samples, 0, numFramesExtracted);
+    }
+
+    _applyPreFilter(samples, numFrames) {
+        const fs = 44100;
+        const fc = fs / (2.5 * this._preFilterPitch);
+        const w0 = 2 * Math.PI * fc / fs;
+        const cosw0 = Math.cos(w0);
+        const sinw0 = Math.sin(w0);
+        const alpha = sinw0 / 1.414;
+        const a0 = 1 + alpha;
+        const b0 = (1 - cosw0) / (2 * a0);
+        const b1 = (1 - cosw0) / a0;
+        const b2 = b0;
+        const a1 = (-2 * cosw0) / a0;
+        const a2 = (1 - alpha) / a0;
+        for (let i = 0; i < numFrames; i++) {
+            const idx = 2 * i;
+            const inL = samples[idx];
+            const inR = samples[idx + 1];
+            const outL = b0 * inL + b1 * this._pfX1L + b2 * this._pfX2L
+                       - a1 * this._pfY1L - a2 * this._pfY2L;
+            const outR = b0 * inR + b1 * this._pfX1R + b2 * this._pfX2R
+                       - a1 * this._pfY1R - a2 * this._pfY2R;
+            this._pfX2L = this._pfX1L; this._pfX1L = inL;
+            this._pfY2L = this._pfY1L; this._pfY1L = outL;
+            this._pfX2R = this._pfX1R; this._pfX1R = inR;
+            this._pfY2R = this._pfY1R; this._pfY1R = outR;
+            samples[idx] = outL;
+            samples[idx + 1] = outR;
+        }
     }
 
     extract(target, numFrames = 0) {
@@ -330,6 +435,10 @@ class SimpleFilter extends FilterSupport {
     clear() {
         super.clear();
         this.outputBufferPosition = 0;
+        this._pfX1L = 0; this._pfX2L = 0;
+        this._pfY1L = 0; this._pfY2L = 0;
+        this._pfX1R = 0; this._pfX2R = 0;
+        this._pfY1R = 0; this._pfY2R = 0;
     }
 }
 
@@ -337,7 +446,7 @@ const USE_AUTO_SEQUENCE_LEN = 0;
 const DEFAULT_SEQUENCE_MS = USE_AUTO_SEQUENCE_LEN;
 const USE_AUTO_SEEKWINDOW_LEN = 0;
 const DEFAULT_SEEKWINDOW_MS = USE_AUTO_SEEKWINDOW_LEN;
-const DEFAULT_OVERLAP_MS = 8;
+const DEFAULT_OVERLAP_MS = 16;
 const _SCAN_OFFSETS = [[124, 186, 248, 310, 372, 434, 496, 558, 620, 682, 744, 806, 868, 930, 992, 1054, 1116, 1178, 1240, 1302, 1364, 1426, 1488, 0], [-100, -75, -50, -25, 25, 50, 75, 100, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [-20, -15, -10, -5, 5, 10, 15, 20, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], [-4, -3, -2, -1, 1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]];
 const AUTOSEQ_TEMPO_LOW = 0.25;
 const AUTOSEQ_TEMPO_TOP = 4.0;
@@ -554,13 +663,12 @@ class Stretch extends AbstractFifoSamplePipe {
         let i = 0;
         let context;
         let tempFrame;
-        const frameScale = 1 / this.overlapLength;
         let fi;
         let inputOffset;
         let outputOffset;
         for (; i < this.overlapLength; i = i + 1) {
-            tempFrame = (this.overlapLength - i) * frameScale;
-            fi = i * frameScale;
+            fi = 0.5 * (1 - Math.cos(Math.PI * i / this.overlapLength));
+            tempFrame = 1 - fi;
             context = 2 * i;
             inputOffset = context + inputPosition;
             outputOffset = context + outputPosition;
@@ -704,6 +812,7 @@ class SoundTouch {
                 this.stretch.outputBuffer = this._outputBuffer;
             }
         }
+        this.stretch.quickSeek = this.virtualPitch <= 1.189207115;
     }
 
     process() {
@@ -835,6 +944,7 @@ class PitchShifter {
 
     set pitch(pitch) {
         this._soundtouch.pitch = pitch;
+        this._filter.pitch = pitch;
     }
 
     set pitchSemitones(semitone) {
