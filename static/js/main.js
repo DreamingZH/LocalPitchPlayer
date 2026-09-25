@@ -1048,6 +1048,7 @@ document.addEventListener('DOMContentLoaded', function () {
     let visualizerCanvas = document.getElementById('visualizer');
     let visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
     let visualizerAnimationFrame;
+    let visualizerDataArray = null;
     let pitchShifter;
     let gainNode;
     let loadRequestId = 0;
@@ -1208,8 +1209,24 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     };
 
+    // 停止频谱动画：取消 rAF 续帧并清空画布，避免暂停后 GPU 持续空转
+    function stopVisualizer() {
+        if (visualizerAnimationFrame) {
+            cancelAnimationFrame(visualizerAnimationFrame);
+            visualizerAnimationFrame = null;
+        }
+        if (visualizerCanvas && visualizerCtx) {
+            visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+        }
+    }
+
     function drawVisualizer() {
         if (!visualizerCanvas || !visualizerCtx) return;
+        // 未在播放时不再续帧，作为兜底防止 rAF 循环泄漏
+        if (!isPlaying) {
+            visualizerAnimationFrame = null;
+            return;
+        }
         visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
 
         const width = visualizerCanvas.clientWidth;
@@ -1220,7 +1237,11 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         const bufferLength = analyserNode.frequencyBinCount;
-        const dataArray = new Uint8Array(bufferLength);
+        // 复用缓冲区，避免每帧分配造成 GC 压力
+        if (!visualizerDataArray || visualizerDataArray.length !== bufferLength) {
+            visualizerDataArray = new Uint8Array(bufferLength);
+        }
+        const dataArray = visualizerDataArray;
         analyserNode.getByteFrequencyData(dataArray);
 
         visualizerCtx.clearRect(0, 0, width, height);
@@ -1412,6 +1433,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             pitchShifter = null;
                         }
                         isPlaying = false;
+                        stopVisualizer();
                         playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
                         i18n.updatePageTexts();
                         if ('mediaSession' in navigator) {
@@ -1941,6 +1963,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 pitchShifter = null;
             }
             isPlaying = false;
+            stopVisualizer();
             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
             i18n.updatePageTexts();
             if ('mediaSession' in navigator) {
@@ -1997,6 +2020,7 @@ document.addEventListener('DOMContentLoaded', function () {
             fadeOut(gainNode, () => {
                 disconnectPitchShifter();
                 isPlaying = false;
+                stopVisualizer();
                 playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
                 i18n.updatePageTexts();
                 if ('mediaSession' in navigator) {
@@ -2899,6 +2923,7 @@ document.addEventListener('DOMContentLoaded', function () {
                                 pitchShifter = null;
                             }
                             isPlaying = false;
+                            stopVisualizer();
                             playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
                             i18n.updatePageTexts();
                             if ('mediaSession' in navigator) {
