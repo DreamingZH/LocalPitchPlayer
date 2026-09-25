@@ -1365,16 +1365,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const rect = progress.getBoundingClientRect();
             const clickX = event.clientX - rect.left;
             const progressWidth = rect.width;
-            const perc = clickX / progressWidth;
-            if (isPlaying) {
-                pitchShifter.disconnect();
-                pitchShifter.percentagePlayed = perc;
-                play()
-            } else {
-                pitchShifter.disconnect();
-                pitchShifter.percentagePlayed = perc;
-                resumeSong()
-            }
+            seekToTime((clickX / progressWidth) * pitchShifter.duration);
         });
         searchInput.addEventListener('input', handleSearchInput);
 
@@ -1487,14 +1478,23 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if ('mediaSession' in navigator) {
-            navigator.mediaSession.setActionHandler('play', () => {
+            setMediaActionHandler('play', () => {
                 if (!isPlaying) resumeSong();
             });
-            navigator.mediaSession.setActionHandler('pause', () => {
+            setMediaActionHandler('pause', () => {
                 if (isPlaying) pauseSong();
             });
-            navigator.mediaSession.setActionHandler('previoustrack', handlePrevSong);
-            navigator.mediaSession.setActionHandler('nexttrack', handleNextSong);
+            setMediaActionHandler('previoustrack', handlePrevSong);
+            setMediaActionHandler('nexttrack', handleNextSong);
+            setMediaActionHandler('seekto', details => {
+                if (details.seekTime != null) seekToTime(details.seekTime);
+            });
+            setMediaActionHandler('seekbackward', details => {
+                seekToTime(currentSeek - ((details && details.seekOffset) || 10));
+            });
+            setMediaActionHandler('seekforward', details => {
+                seekToTime(currentSeek + ((details && details.seekOffset) || 10));
+            });
         }
 
         if (multiSelectBtn) {
@@ -2077,8 +2077,54 @@ document.addEventListener('DOMContentLoaded', function () {
         }, fadeStep * 1000);
     }
 
+// 注册媒体会话动作。各平台支持的动作不同（如 seekto 可能不被接受），失败时忽略
+    function setMediaActionHandler(action, handler) {
+        if (!('mediaSession' in navigator) || !navigator.mediaSession.setActionHandler) return;
+        try {
+            navigator.mediaSession.setActionHandler(action, handler);
+        } catch (e) {
+            // 该平台不支持此动作
+        }
+    }
+
+    // 跳转到指定秒数（供进度条点击、媒体控件 seek 复用）
+    function seekToTime(seconds) {
+        if (!pitchShifter) return;
+        const duration = pitchShifter.duration;
+        if (!isFinite(duration) || duration <= 0) return;
+        const perc = Math.min(1, Math.max(0, seconds / duration));
+        const wasPlaying = isPlaying;
+        disconnectPitchShifter();
+        pitchShifter.percentagePlayed = perc;
+        if (wasPlaying) {
+            play();
+        } else {
+            resumeSong();
+        }
+    }
+
+    // 把播放进度同步给系统媒体控件，OS 进度条才能显示并支持拖动
+    function updateMediaPosition(currentTime, duration) {
+        if (!('mediaSession' in navigator) || !navigator.mediaSession.setPositionState) return;
+        if (!isFinite(duration) || duration <= 0) return;
+        if (!isFinite(currentTime)) return;   // Math.max(NaN,0) 仍是 NaN，需先挡掉
+        const position = Math.min(Math.max(currentTime, 0), duration);
+        try {
+            // 变速不改变总时长，但源时间相对墙钟的推进速率等于速度倍率
+            navigator.mediaSession.setPositionState({
+                duration: duration,
+                playbackRate: currentTempoShift,
+                position: position
+            });
+        } catch (e) {
+            // 位置越界或平台拒绝时忽略
+        }
+    }
+
 // 更新进度条
     function updateProgress(currentTime, duration) {
+        // 无论是否在播放都要同步媒体控件位置，暂停时进度条需要保持不动
+        updateMediaPosition(currentTime, duration);
         if (isPlaying || currentTime === 0) // 允许在停止时重置为0
         {
             const progress = (currentTime / duration) * 100;
