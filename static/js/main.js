@@ -1891,7 +1891,9 @@ document.addEventListener('DOMContentLoaded', function () {
                 ps.on('play', (detail) => {
                     currentSeek = parseFloat(detail.timePlayed);
                     updateProgress(currentSeek, ps.duration);
-                    if (detail.formattedTimePlayed >= ps.formattedDuration) {
+                    // 必须比较数值：formattedTimePlayed 是 "M:SS" 字符串，
+                    // 与 "MM:SS" 做字典序比较会因 ':' > 数字而在 1~9 分钟处误判为播完
+                    if (detail.timePlayed >= ps.duration) {
                         if (isLooping) {
                             ps.percentagePlayed = 0;
                             currentSeek = 0;
@@ -2652,7 +2654,9 @@ document.addEventListener('DOMContentLoaded', function () {
         ps.on('play', (detail) => {
             currentSeek = parseFloat(detail.timePlayed);
             updateProgress(currentSeek, ps.duration);
-            if (detail.formattedTimePlayed >= ps.formattedDuration) {
+            // 必须比较数值：formattedTimePlayed 是 "M:SS" 字符串，
+            // 与 "MM:SS" 做字典序比较会因 ':' > 数字而在 1~9 分钟处误判为播完
+            if (detail.timePlayed >= ps.duration) {
                 if (isLooping) {
                     ps.percentagePlayed = 0;
                     currentSeek = 0;
