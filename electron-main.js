@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, nativeImage } = require('electron');
+const { app, BrowserWindow, ipcMain, nativeImage, shell } = require('electron');
 const path = require('path');
 
 function createWindow() {
@@ -24,11 +24,20 @@ function createWindow() {
     win.loadFile('index.html');
 
     // 关键：阻止文件拖拽时触发页面导航（这是 Electron 的默认行为导致拖拽失效）
+    // 渲染进程内的任何跳转都应被拦截：拖入 .html 等文件会直接覆盖播放器页面，
+    // 导致播放列表与音频图全部丢失且无法返回。应用是单页的，不依赖页面跳转。
     win.webContents.on('will-navigate', (event, url) => {
-        // 阻止所有 file:// 协议的非页面导航（即文件拖拽）
-        if (url.startsWith('file://') && !url.endsWith('.html')) {
-            event.preventDefault();
+        event.preventDefault();
+    });
+
+    // target="_blank" 的外部链接交给系统浏览器打开。
+    // 默认行为会新建一个继承 nodeIntegration/contextIsolation 设置的窗口去加载远程站点，
+    // 等于把 Node 完整暴露给外部内容。
+    win.webContents.setWindowOpenHandler(({ url }) => {
+        if (/^https?:\/\//i.test(url)) {
+            shell.openExternal(url);
         }
+        return { action: 'deny' };
     });
 
     // 监听来自页面的图标更新（歌曲封面）

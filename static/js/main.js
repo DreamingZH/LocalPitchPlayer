@@ -1033,6 +1033,11 @@ document.addEventListener('DOMContentLoaded', function () {
 // 全局变量
     let songs = [];
     let currentSongIndex = 0;
+    // 当前歌曲的引用，独立于 isPlaying 存在。
+    // isPlaying 只是传输状态（暂停时为 false），而 currentSongIndex 只是下标，
+    // 一旦 songs 被重排下标就会失效。二者都不足以在列表变更后重新定位当前歌曲，
+    // 因此这里用对象引用作为唯一真相来源。
+    let currentSong = null;
     let multiSelectMode = false;
     let selectedSongs = new Set();
     let lastSelectedSong = null;
@@ -1051,7 +1056,17 @@ document.addEventListener('DOMContentLoaded', function () {
     let visualizerDataArray = null;
     let pitchShifter;
     let gainNode;
+    // 淡入/淡出定时器句柄。两者互斥：新的淡变必须取消上一个，
+    // 否则暂停后立刻恢复时，旧的淡出定时器仍会把音量拉回 0 并触发回调。
+    let fadeInTimer = null;
+    let fadeOutTimer = null;
+    // 淡出进行中。声音尚未消失，可视化需继续；用于区分"逻辑已暂停"与"视听已静止"
+    let isFadingOut = false;
     let loadRequestId = 0;
+    // 封面加载令牌。音频路径由 loadRequestId 守卫，封面链路（标签读取 → FileReader
+    // → Image.onload）没有对应机制，快速切歌时先返回的旧请求会覆盖新歌曲的
+    // 主题色、favicon 与 mediaSession 元数据。
+    let coverRequestId = 0;
     let currentAlbumColor = null; // null或 "r, g, b"
     let currentDisplayColor = null; // 经过当前明暗主题优化后的展示色
     let activeThemeIndex = 1;     // 用于在主题渐变伪元素之间切换 (1 或 2)
@@ -1192,14 +1207,34 @@ document.addEventListener('DOMContentLoaded', function () {
         updateThemeBackground();
     }
 
+    // 创建新的 GainNode，并释放上一个。
+    // play() 中有 gainNode.connect(analyserNode)，若不显式断开，
+    // 旧的 GainNode 会一直挂在 analyserNode → destination 上，
+    // 每切一次歌就多一个常驻节点，长时间播放会不断累积。
+    function createGainNode() {
+        if (gainNode) {
+            try {
+                gainNode.disconnect();
+            } catch (e) {
+                // 已断开或节点已失效，忽略
+            }
+            gainNode = null;
+        }
+        gainNode = audioContext.createGain();
+        return gainNode;
+    }
+
     let play = function () {
+        // 取消可能仍在运行的淡出，避免它在新一轮播放期间把音量拉回 0
+        cancelFadeOut();
+        // 恢复播放：淡出窗口结束，视听回到播放态
+        isFadingOut = false;
         pitchShifter.connect(gainNode);
         gainNode.connect(analyserNode);
         analyserNode.connect(audioContext.destination);
         audioContext.resume().then(() => {
             isPlaying = true;
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-pause"></i>';
-            i18n.updatePageTexts();
+            setPlayPauseButtonState(true);
             if (!visualizerAnimationFrame) {
                 drawVisualizer();
             }
@@ -1209,8 +1244,22 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     };
 
+    // 切换播放按钮的图标与提示文案。
+    // 按钮上的 data-i18n-title 原本写死为 "play"，而 updatePageTexts() 会按该属性
+    // 重写 title，导致播放中仍提示"播放"。这里同步切换 i18n key 再刷新文案。
+    function setPlayPauseButtonState(playing) {
+        playPauseBtn.innerHTML = playing
+            ? '<i class="fa-solid fa-pause"></i>'
+            : '<i class="fa-solid fa-play"></i>';
+        playPauseBtn.setAttribute('data-i18n-title', playing ? 'pause' : 'play');
+        i18n.updatePageTexts();
+    }
+
     // 停止频谱动画：取消 rAF 续帧并清空画布，避免暂停后 GPU 持续空转
     function stopVisualizer() {
+        // 这里是"停止表现"的唯一收口点，同时清掉淡出标记，
+        // 避免其它停止路径（删除歌曲、解码失败等）留下标志导致 drawVisualizer 继续续帧
+        isFadingOut = false;
         if (visualizerAnimationFrame) {
             cancelAnimationFrame(visualizerAnimationFrame);
             visualizerAnimationFrame = null;
@@ -1222,8 +1271,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
     function drawVisualizer() {
         if (!visualizerCanvas || !visualizerCtx) return;
-        // 未在播放时不再续帧，作为兜底防止 rAF 循环泄漏
-        if (!isPlaying) {
+        // 未在播放时不再续帧，作为兜底防止 rAF 循环泄漏。
+        // 淡出期间声音仍然可闻，频谱要继续画到真正静音为止。
+        if (!isPlaying && !isFadingOut) {
             visualizerAnimationFrame = null;
             return;
         }
@@ -1377,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', function () {
             const rect = progress.getBoundingClientRect();
             const clickX = event.clientX - rect.left;
             const progressWidth = rect.width;
-            seekToTime((clickX / progressWidth) * pitchShifter.duration);
+            seekToTime((clickX / progressWidth) * pitchShifter.duration, true);
         });
         searchInput.addEventListener('input', handleSearchInput);
 
@@ -1426,11 +1476,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     });
 
                     // 重新渲染列表
-                    songList.innerHTML = '';
-                    songs.forEach(song => {
-                        const listItem = createSongListItem(song);
-                        songList.appendChild(listItem);
-                    });
+                    renderSongList();
 
                     selectedSongs.clear();
                     lastSelectedSong = null;
@@ -1438,50 +1484,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
                     if (songs.length === 0) {
                         currentSongIndex = 0;
-                        // 停止播放并重置所有状态
-                        if (pitchShifter) {
-                            try {
-                                if (typeof pitchShifter.stop === 'function') {
-                                    pitchShifter.stop();
-                                } else {
-                                    pitchShifter.disconnect();
-                                }
-                            } catch (e) {
-                                console.error("Error stopping pitchShifter:", e);
-                            }
-                            pitchShifter = null;
-                        }
-                        isPlaying = false;
-                        stopVisualizer();
-                        playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-                        i18n.updatePageTexts();
-                        if ('mediaSession' in navigator) {
-                            navigator.mediaSession.playbackState = 'paused';
-                        }
-                        // 重置进度条
-                        progressBar.style.width = '0%';
-                        // 恢复默认配色
-                        currentAlbumColor = null;
-                        updateThemeBackground();
-                        // 恢复默认图标
-                        resetIcons();
-                        // 恢复默认标题
-                        const titleText1 = playerTitle.querySelector('.sidebar-title-text');
-                        if (titleText1) {
-                            titleText1.textContent = 'Music Player';
-                            titleText1.style.setProperty('--marquee-distance', '0px');
-                        } else {
-                            playerTitle.textContent = 'Music Player';
-                        }
-                        playerTitle.classList.remove('overflow');
-                        playerTitle.title = 'Music Player';
-                        document.title = 'Music Player';
-                        // 隐藏专辑封面
-                        const albumCoverImg = document.getElementById('album-cover');
-                        if (albumCoverImg) {
-                            albumCoverImg.src = '';
-                            albumCoverImg.style.display = 'none';
-                        }
+                        currentSong = null;
+                        // 停止播放并重置所有状态（含停止 pitchShifter）
+                        resetToEmptyPlaylistState();
                     } else {
                         if (removedPlaying) {
                             // 播放被删除歌曲的下一首
@@ -1492,7 +1497,11 @@ document.addEventListener('DOMContentLoaded', function () {
                         } else {
                             // 重新查找正在播放的歌曲在新列表中的位置
                             currentSongIndex = songs.indexOf(playingSong);
-                            if (currentSongIndex === -1) currentSongIndex = 0;
+                            if (currentSongIndex === -1) {
+                                currentSongIndex = 0;
+                                // 原当前歌曲已被删除，同步引用避免指向不存在的歌曲
+                                currentSong = songs[0] || null;
+                            }
                         }
                     }
 
@@ -1515,13 +1524,13 @@ document.addEventListener('DOMContentLoaded', function () {
             setMediaActionHandler('previoustrack', handlePrevSong);
             setMediaActionHandler('nexttrack', handleNextSong);
             setMediaActionHandler('seekto', details => {
-                if (details.seekTime != null) seekToTime(details.seekTime);
+                if (details.seekTime != null) seekToTime(details.seekTime, true);
             });
             setMediaActionHandler('seekbackward', details => {
-                seekToTime(currentSeek - ((details && details.seekOffset) || 10));
+                seekToTime(currentSeek - ((details && details.seekOffset) || 10), true);
             });
             setMediaActionHandler('seekforward', details => {
-                seekToTime(currentSeek + ((details && details.seekOffset) || 10));
+                seekToTime(currentSeek + ((details && details.seekOffset) || 10), true);
             });
         }
 
@@ -1546,11 +1555,15 @@ document.addEventListener('DOMContentLoaded', function () {
 
         if (selectAllBtn) {
             selectAllBtn.addEventListener('click', () => {
-                const songItems = Array.from(songList.querySelectorAll('.song-item')).filter(i => i.style.display !== 'none');
-                const allSelected = songItems.every(i => i.classList.contains('selected'));
+                const allItems = Array.from(songList.querySelectorAll('.song-item'));
+                const songItems = allItems.filter(i => i.style.display !== 'none');
+                const allSelected = songItems.length > 0 && songItems.every(i => i.classList.contains('selected'));
 
                 if (allSelected) {
-                    songItems.forEach(item => {
+                    // 取消全选必须清掉所有行的 selected，包括被搜索过滤隐藏的行。
+                    // 删除是按 DOM 的 .selected 类扫描全部行的，若只摘可见行，
+                    // 隐藏行会残留不可见的选中态，之后删除时把它们一并删掉。
+                    allItems.forEach(item => {
                         item.classList.remove('selected');
                     });
                     selectedSongs.clear();
@@ -1561,7 +1574,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     // 全选时直接将所有可见歌曲加入 selectedSongs
                     // 使用 songs 数组的索引来确保引用正确
                     selectedSongs.clear();
-                    const allItems = Array.from(songList.querySelectorAll('.song-item'));
                     songItems.forEach(item => {
                         const idx = allItems.indexOf(item);
                         if (idx > -1 && idx < songs.length) {
@@ -1577,8 +1589,13 @@ document.addEventListener('DOMContentLoaded', function () {
 // ====================== 文件处理通用函数 ======================
     function processDroppedFiles(files) {
         let newSongs = [];
-        const playingSong = isPlaying ? songs[currentSongIndex] : null;
+        // 用对象引用而非 isPlaying ? songs[currentSongIndex] 捕获当前歌曲：
+        // 暂停时 isPlaying 为 false，但当前歌曲依然存在，下标也会因重排而失效。
+        const previousSong = currentSong;
         const wasEmpty = songs.length === 0;
+        // 已存在的歌曲会被移动到顶部，这会改变 songs 顺序，
+        // 因此即使没有新歌也必须重渲染，否则数组与 DOM 顺序会永久错位。
+        let reordered = false;
 
         // 首先遍历所有文件，保存图片文件到 allFiles 映射中
         Array.from(files).forEach(file => {
@@ -1615,6 +1632,7 @@ document.addEventListener('DOMContentLoaded', function () {
                     const existingSong = songs[existingIndex];
                     songs.splice(existingIndex, 1);
                     songs.unshift(existingSong);
+                    reordered = true;
                 } else {
                     // 不存在：添加新歌曲，同时存储路径用于去重
                     newSongs.push({name: file.name, path: filePath, file: file, size: file.size});
@@ -1627,8 +1645,8 @@ document.addEventListener('DOMContentLoaded', function () {
             songs.unshift(...newSongs);
         }
 
-        // 如果有任何变化（新歌曲或移动的歌曲）
-        if (newSongs.length > 0 || playingSong) {
+        // 如果有任何变化（新歌曲或顺序被调整）
+        if (newSongs.length > 0 || reordered) {
             // 清除选中状态，避免旧的 selectedSongs 引用导致问题
             selectedSongs.clear();
             lastSelectedSong = null;
@@ -1643,20 +1661,27 @@ document.addEventListener('DOMContentLoaded', function () {
             updatePlaylistActions();
 
             // 重新渲染列表
-            songList.innerHTML = '';
-            songs.forEach(song => {
-                const listItem = createSongListItem(song);
-                songList.appendChild(listItem);
-            });
+            renderSongList();
 
-            // 更新当前播放索引：重新查找正在播放的歌曲在新列表中的位置
-            if (playingSong) {
-                currentSongIndex = songs.indexOf(playingSong);
-                if (currentSongIndex === -1) currentSongIndex = 0;
+            // 更新当前播放索引：通过对象引用重新定位，而不是沿用旧下标
+            if (previousSong) {
+                const newIndex = songs.indexOf(previousSong);
+                if (newIndex === -1) {
+                    // 原当前歌曲已不在列表中，索引与引用一起收敛到首项，
+                    // 否则 currentSong 会一直指向已被移除的歌曲
+                    currentSongIndex = 0;
+                    currentSong = songs[0] || null;
+                } else {
+                    currentSongIndex = newIndex;
+                }
             } else if (wasEmpty && songs.length > 0) {
                 // 列表之前为空，添加新歌曲后自动播放第一首
                 currentSongIndex = 0;
                 playSong(songs[currentSongIndex]);
+            } else if (currentSongIndex >= songs.length) {
+                // 当前歌曲已不在列表中，收敛到有效范围
+                currentSongIndex = Math.max(0, songs.length - 1);
+                currentSong = songs[currentSongIndex] || null;
             }
 
             // Re-bind active classes
@@ -1687,6 +1712,32 @@ document.addEventListener('DOMContentLoaded', function () {
 
         listItem.addEventListener('click', (e) => {
             const index = songs.indexOf(song);
+            // Shift 用于范围选择，必须先于 ctrl/meta 判断，
+            // 否则会被下面的单选切换分支吃掉，永远走不到范围逻辑。
+            // 只在多选模式下生效：删除按钮与 Delete 快捷键都要求 multiSelectMode，
+            // 非多选模式下的框选结果无法执行，留着反而会让用户以为能删。
+            if (e.shiftKey && lastSelectedSong && multiSelectMode) {
+                const lastIndex = songs.indexOf(lastSelectedSong);
+                if (lastIndex > -1) {
+                    const start = Math.min(lastIndex, index);
+                    const end = Math.max(lastIndex, index);
+                    selectedSongs.clear();
+                    const allItems = songList.querySelectorAll('.song-item');
+                    allItems.forEach(i => i.classList.remove('selected'));
+                    for (let i = start; i <= end; i++) {
+                        // 跳过被搜索过滤隐藏的行：删除是按 .selected 扫描全部行的，
+                        // 选中看不见的歌会让用户以为只删了可见的那些
+                        if (songs[i] && (!allItems[i] || allItems[i].style.display !== 'none')) {
+                            selectedSongs.add(songs[i]);
+                            if (allItems[i]) allItems[i].classList.add('selected');
+                        }
+                    }
+                    // 锚点保持不变，连续 Shift 扩展才有意义
+                    updatePlaylistActions();
+                    return;
+                }
+            }
+
             if (multiSelectMode || e.ctrlKey || e.metaKey || e.shiftKey) {
                 if (selectedSongs.has(song)) {
                     selectedSongs.delete(song);
@@ -1696,17 +1747,6 @@ document.addEventListener('DOMContentLoaded', function () {
                     listItem.classList.add('selected');
                 }
                 lastSelectedSong = song;
-            } else if (e.shiftKey && lastSelectedSong) {
-                const lastIndex = songs.indexOf(lastSelectedSong);
-                const start = Math.min(lastIndex, index);
-                const end = Math.max(lastIndex, index);
-                selectedSongs.clear();
-                const allItems = songList.querySelectorAll('.song-item');
-                allItems.forEach(i => i.classList.remove('selected'));
-                for (let i = start; i <= end; i++) {
-                    selectedSongs.add(songs[i]);
-                    allItems[i].classList.add('selected');
-                }
             } else {
                 selectedSongs.clear();
                 const allItems = songList.querySelectorAll('.song-item');
@@ -1745,7 +1785,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
             if (draggedIndex !== targetIndex && !isNaN(draggedIndex)) {
                 // Determine current playing song
-                const playingSong = songs[currentSongIndex];
+                // 优先用对象引用，currentSongIndex 可能在拖拽前已因重排而失效
+                const playingSong = currentSong || songs[currentSongIndex];
 
                 // Reorder array
                 const [draggedSong] = songs.splice(draggedIndex, 1);
@@ -1760,7 +1801,11 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
 
                 // Update currentSongIndex so playback isn't interrupted
-                currentSongIndex = songs.indexOf(playingSong);
+                const relocatedIndex = songs.indexOf(playingSong);
+                if (relocatedIndex !== -1) {
+                    currentSongIndex = relocatedIndex;
+                    currentSong = playingSong;
+                }
             }
         });
 
@@ -1799,6 +1844,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 处理上一首按钮点击
     function handlePrevSong() {
+        // 空列表时 % 0 会得到 NaN，之后所有索引比较静默失效
+        if (songs.length === 0) return;
         disconnectPitchShifter();
         currentSongIndex = (currentSongIndex - 1 + songs.length) % songs.length;
         currentSeek = 0;
@@ -1807,6 +1854,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 处理下一首按钮点击
     function handleNextSong() {
+        if (songs.length === 0) return;
         disconnectPitchShifter();
         if (isRandom) {
             currentSongIndex = Math.floor(Math.random() * songs.length);
@@ -1842,6 +1890,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 处理搜索输入
     function handleSearchInput() {
+        applySearchFilter();
+        // 搜索内容变化时（包括清空），滚动到当前播放歌曲
+        scrollToActiveSong();
+    }
+
+    // 按搜索框内容过滤列表行。不含滚动，便于在重建列表时复用。
+    function applySearchFilter() {
         const searchTerm = searchInput.value.trim().toLowerCase();
         const songItems = songList.querySelectorAll('.song-item');
         let hasMatch = false;
@@ -1864,14 +1919,29 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
             searchInput.classList.remove('error');
         }
+    }
 
-        // 搜索内容变化时（包括清空），滚动到当前播放歌曲
-        scrollToActiveSong();
+    // 重建播放列表。
+    // 搜索过滤的结果只体现在各行的 style.display 上，重新创建的行不会自带该状态。
+    // 因此重建后必须重放过滤，否则搜索框仍显示关键词而列表却恢复全部可见，
+    // 此时"全选 + 删除"会把被过滤隐藏的歌曲一并删除。
+    // 这里只应用过滤、不滚动：各调用方会在更新完 currentSongIndex 之后自行滚动。
+    function renderSongList() {
+        songList.innerHTML = '';
+        songs.forEach(song => {
+            const listItem = createSongListItem(song);
+            songList.appendChild(listItem);
+        });
+
+        applySearchFilter();
     }
 
 // 播放歌曲
     function playSong(song) {
         if (!song) return;
+
+        // 记录当前歌曲引用，供列表重排/重渲染后重新定位
+        currentSong = song;
 
         // 小屏幕时点击播放后自动关闭播放列表
         if (window.innerWidth <= 800 && sidebarLayout && sidebarLayout.classList.contains('show-mobile')) {
@@ -1904,7 +1974,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
-        gainNode = audioContext.createGain();
+        createGainNode();
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -1947,6 +2017,11 @@ document.addEventListener('DOMContentLoaded', function () {
 
             }, function (error) {
                 console.log("Filereader error: " + error.err);
+                // 解码失败时 pitchShifter 已被置空，但 isPlaying 仍为 true，
+                // 导致 pauseSong 被 if (pitchShifter) 挡住、播放键与可视化一直卡在播放态。
+                // 这里把状态复位，让用户仍可选择其它歌曲。
+                if (currentRequestId !== loadRequestId) return;
+                handleDecodeError(song, error);
             });
         };
 
@@ -1960,6 +2035,111 @@ document.addEventListener('DOMContentLoaded', function () {
         } catch (e) {
             console.error("Error reading file:", e);
             handleFileError(song);
+        }
+    }
+
+    // 处理解码失败（文件损坏或编码不支持）。
+    // 与 handleFileError 不同，这里不移除歌曲——文件本身可能没问题，
+    // 只是本次解码失败，保留条目让用户可以重试或改用其它解码器。
+    // 关键是必须把播放器状态复位，否则会卡在无法控制的"播放中"。
+    function handleDecodeError(song, error) {
+        console.error("Audio decode failed:", song && song.name, error);
+
+        // 只有当失败的仍是当前歌曲时才复位，避免覆盖掉用户已切到的新歌
+        if (currentSong !== song) return;
+
+        pitchShifter = null;
+        isPlaying = false;
+        isFadingOut = false;
+        currentSeek = 0;
+        stopVisualizer();
+        setPlayPauseButtonState(false);
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+        progressBar.style.width = '0%';
+
+        // 元数据也要复位：updateTitle / updatePageIcon 只在解码成功后才执行，
+        // 不清的话标题、封面、主题色、favicon 仍是上一首歌的，
+        // 与列表里高亮的失败歌曲对不上。
+        // 作废在途封面请求，避免它们随后又把旧封面写回来。
+        coverRequestId++;
+        const failedName = song && song.name ? song.name : '';
+        const titleText = playerTitle.querySelector('.sidebar-title-text');
+        if (titleText) {
+            titleText.textContent = failedName.replace(/\.[^/.]+$/, '') || 'Music Player';
+            titleText.style.setProperty('--marquee-distance', '0px');
+        }
+        playerTitle.classList.remove('overflow');
+        document.title = failedName.replace(/\.[^/.]+$/, '') || 'Music Player';
+        currentAlbumColor = null;
+        updateThemeBackground();
+        resetIcons();
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = '';
+            albumCoverImg.style.display = 'none';
+        }
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: document.title,
+                artist: 'Unknown Artist',
+                album: 'Unknown Album'
+            });
+        }
+    }
+
+    // 播放列表清空后的统一复位（删除按钮、文件失效、Delete 键三处共用）。
+    // 关键是必须作废在途的封面加载：封面链路是异步的（FileReader / Image.onload），
+    // 若不推进 coverRequestId，已删除歌曲的封面会在复位之后重新写回主题色、
+    // favicon 与 Electron 任务栏图标。
+    function resetToEmptyPlaylistState() {
+        // 作废所有在途封面请求
+        coverRequestId++;
+
+        if (pitchShifter) {
+            try {
+                if (typeof pitchShifter.stop === 'function') {
+                    pitchShifter.stop();
+                } else {
+                    pitchShifter.disconnect();
+                }
+            } catch (e) {
+                console.error("Error stopping pitchShifter:", e);
+            }
+            pitchShifter = null;
+        }
+
+        isPlaying = false;
+        isFadingOut = false;
+        cancelFadeIn();
+        cancelFadeOut();
+        stopVisualizer();
+        setPlayPauseButtonState(false);
+        if ('mediaSession' in navigator) {
+            navigator.mediaSession.playbackState = 'paused';
+        }
+        progressBar.style.width = '0%';
+        // 恢复默认配色与图标
+        currentAlbumColor = null;
+        updateThemeBackground();
+        resetIcons();
+        // 恢复默认标题
+        const titleText = playerTitle.querySelector('.sidebar-title-text');
+        if (titleText) {
+            titleText.textContent = 'Music Player';
+            titleText.style.setProperty('--marquee-distance', '0px');
+        } else {
+            playerTitle.textContent = 'Music Player';
+        }
+        playerTitle.classList.remove('overflow');
+        playerTitle.title = 'Music Player';
+        document.title = 'Music Player';
+        // 隐藏专辑封面
+        const albumCoverImg = document.getElementById('album-cover');
+        if (albumCoverImg) {
+            albumCoverImg.src = '';
+            albumCoverImg.style.display = 'none';
         }
     }
 
@@ -1980,51 +2160,14 @@ document.addEventListener('DOMContentLoaded', function () {
         // 如果列表为空
         if (songs.length === 0) {
             currentSongIndex = 0;
-            if (pitchShifter) {
-                try {
-                    if (typeof pitchShifter.stop === 'function') {
-                        pitchShifter.stop();
-                    } else {
-                        pitchShifter.disconnect();
-                    }
-                } catch (e) {
-                    console.error("Error stopping pitchShifter:", e);
-                }
-                pitchShifter = null;
-            }
-            isPlaying = false;
-            stopVisualizer();
-            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-            i18n.updatePageTexts();
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.playbackState = 'paused';
-            }
-            progressBar.style.width = '0%';
-            currentAlbumColor = null;
-            updateThemeBackground();
-            resetIcons();
-            // 恢复默认标题
-            const titleText1 = playerTitle.querySelector('.sidebar-title-text');
-            if (titleText1) {
-                titleText1.textContent = 'Music Player';
-                titleText1.style.setProperty('--marquee-distance', '0px');
-            } else {
-                playerTitle.textContent = 'Music Player';
-            }
-            playerTitle.classList.remove('overflow');
-            playerTitle.title = 'Music Player';
-            document.title = 'Music Player';
-            // 隐藏专辑封面
-            const albumCoverImg = document.getElementById('album-cover');
-            if (albumCoverImg) {
-                albumCoverImg.src = '';
-                albumCoverImg.style.display = 'none';
-            }
+            currentSong = null;
+            resetToEmptyPlaylistState();
             return;
         }
 
         // 如果删除的是当前正在播放（或即将播放）的歌曲
-        if (indexToRemove === currentSongIndex) {
+        // 用对象引用比较，避免下标在重排后失效导致删错歌
+        if (song === currentSong || indexToRemove === currentSongIndex) {
             // 如果删除的是最后一首，则播放新的最后一首
             if (currentSongIndex >= songs.length) {
                 currentSongIndex = songs.length - 1;
@@ -2036,6 +2179,7 @@ document.addEventListener('DOMContentLoaded', function () {
             currentSongIndex--;
         }
         // 如果删除的歌曲在当前播放歌曲之后，不需要调整索引，仅删除即可
+        // （currentSong 引用本就无需变动：删的是后面的歌，不是当前这首）
 
         // 更新 active 类
         const updatedSongItems = songList.querySelectorAll('.song-item');
@@ -2046,28 +2190,60 @@ document.addEventListener('DOMContentLoaded', function () {
 
 // 暂停歌曲
     function pauseSong() {
-        if (pitchShifter) {
-            fadeOut(gainNode, () => {
+        if (!pitchShifter) return;
+
+        // isPlaying 立即翻转：淡出是异步的，若等回调才置位，
+        // 这一秒内再次点击播放键会被当成"再暂停一次"而无法恢复。
+        //
+        // 但视听表现（频谱动画、按钮图标）必须等到淡出真正结束再停，
+        // 否则声音还在响、可视化却已冻结，出现视听错位。
+        // isFadingOut 标记这段窗口，drawVisualizer 据此继续续帧。
+        const shifterAtPause = pitchShifter;
+        isPlaying = false;
+        isFadingOut = true;
+
+        fadeOut(gainNode, () => {
+            isFadingOut = false;
+            // 淡出期间用户可能已切到下一首，此时模块级 pitchShifter 指向新的一首，
+            // 无条件断开会把它误杀，表现为新歌响半秒就没声。
+            if (pitchShifter === shifterAtPause) {
                 disconnectPitchShifter();
-                isPlaying = false;
+            }
+            // 只有确实停在当前这首时才落到暂停表现；
+            // 若期间已恢复播放或切歌，由那条路径自己接管。
+            if (pitchShifter === shifterAtPause) {
                 stopVisualizer();
-                playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-                i18n.updatePageTexts();
+                setPlayPauseButtonState(false);
                 if ('mediaSession' in navigator) {
                     navigator.mediaSession.playbackState = 'paused';
                 }
-            });
-        }
+            }
+        });
     }
 
 // 播放歌曲
     function resumeSong() {
         if (pitchShifter) {
             play();
-            // console.log(gainNode.gain.value)
             fadeIn(gainNode)
         } else {
             playSong(songs[currentSongIndex]);
+        }
+    }
+
+// 淡入/淡出定时器句柄声明在全局变量区（见 gainNode 附近）
+
+    function cancelFadeIn() {
+        if (fadeInTimer) {
+            clearInterval(fadeInTimer);
+            fadeInTimer = null;
+        }
+    }
+
+    function cancelFadeOut() {
+        if (fadeOutTimer) {
+            clearInterval(fadeOutTimer);
+            fadeOutTimer = null;
         }
     }
 
@@ -2076,11 +2252,14 @@ document.addEventListener('DOMContentLoaded', function () {
         const fadeStep = 0.1;
         let currentVolume = gainNode.gain.value;
 
-        const fadeInInterval = setInterval(() => {
+        cancelFadeOut();
+        cancelFadeIn();
+
+        fadeInTimer = setInterval(() => {
             currentVolume = Math.min(currentVolume + fadeStep, 1);
             gainNode.gain.value = currentVolume;
             if (currentVolume >= 1) {
-                clearInterval(fadeInInterval);
+                cancelFadeIn();
                 if (callback) {
                     callback();
                 }
@@ -2093,11 +2272,23 @@ document.addEventListener('DOMContentLoaded', function () {
         const fadeStep = 0.1;
         let currentVolume = gainNode.gain.value;
 
-        const fadeOutInterval = setInterval(() => {
+        cancelFadeIn();
+        cancelFadeOut();
+
+        // 当前音量已是 0 时不会再递减到负数，setInterval 不会自然结束，
+        // 这里直接同步完成，避免留下一个永不触发的定时器。
+        if (currentVolume <= 0) {
+            if (callback) {
+                callback();
+            }
+            return;
+        }
+
+        fadeOutTimer = setInterval(() => {
             currentVolume = Math.max(currentVolume - fadeStep, 0);
             gainNode.gain.value = currentVolume;
             if (currentVolume <= 0) {
-                clearInterval(fadeOutInterval);
+                cancelFadeOut();
                 if (callback) {
                     callback();
                 }
@@ -2116,18 +2307,38 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 跳转到指定秒数（供进度条点击、媒体控件 seek 复用）
-    function seekToTime(seconds) {
+    // 跳转到指定秒数（进度条点击、媒体控件 seek、方向键微调共用）
+    // resumeIfPaused：暂停时是否顺带恢复播放。
+    //   true  —— 进度条点击：明确的跳转意图，恢复播放
+    //   false —— 方向键微调：只移动播放头，保持暂停
+    // maxPerc：进度比例上限。方向键微调传 0.999，避免正好停在 100%
+    // 触发"播完"判定——恢复播放时第一个音频量子就会 extract() 返回 0，
+    // 经 filter.onEnd() 自动跳到下一首，想听完当前曲会被误跳过。
+    // 进度条点击与系统媒体 seek 不传该参数，保持可跳到真正的结尾。
+    function seekToTime(seconds, resumeIfPaused, maxPerc) {
         if (!pitchShifter) return;
         const duration = pitchShifter.duration;
         if (!isFinite(duration) || duration <= 0) return;
-        const perc = Math.min(1, Math.max(0, seconds / duration));
+        const ceiling = (maxPerc === undefined) ? 1 : maxPerc;
+        const perc = Math.min(ceiling, Math.max(0, seconds / duration));
         const wasPlaying = isPlaying;
         disconnectPitchShifter();
         pitchShifter.percentagePlayed = perc;
+
         if (wasPlaying) {
             play();
-        } else {
+        } else if (resumeIfPaused) {
             resumeSong();
+        } else {
+            // 保持暂停：shift 的 timePlayed 变了，但 currentSeek 只在音频量子
+            // 里更新，暂停时不会触发。必须手动同步，否则连续按键每次都从
+            // 同一个陈旧基准计算，表现为"按一次只走 10 秒"。
+            currentSeek = perc * duration;
+            // updateProgress 只在播放中（或归零时）更新进度条，暂停时调用它
+            // 不会生效，所以这里直接写宽度，让方向键的跳转可见
+            progressBar.style.width = `${(currentSeek / duration) * 100}%`;
+            // 同步系统媒体控件位置，OS 面板的进度也要跟着动
+            updateMediaPosition(currentSeek, duration);
         }
     }
 
@@ -2191,34 +2402,37 @@ document.addEventListener('DOMContentLoaded', function () {
     // 更新网页图标及媒体元数据
     function updatePageIcon(file, songName) {
         const title = songName ? songName.replace(/\.[^/.]+$/, "") : "Unknown Title";
+        const myCoverId = ++coverRequestId;
 
         if (typeof window.jsmediatags === 'undefined') {
-            if ('mediaSession' in navigator) {
-                navigator.mediaSession.metadata = new MediaMetadata({title: title});
-            }
+            // jsmediatags 走 CDN，加载失败时不能直接返回：
+            // 否则上一首歌的封面、主题色与 favicon 会一直留着。
+            resetToDefaultCover(title, myCoverId);
             return;
         }
 
         window.jsmediatags.read(file, {
             onSuccess: function (tag) {
+                if (myCoverId !== coverRequestId) return;
                 const {picture} = tag.tags;
                 if (picture) {
                     // 有内嵌封面，直接使用
-                    processCoverImage(picture, tag, title);
+                    processCoverImage(picture, tag, title, myCoverId);
                 } else {
                     // 没有内嵌封面，尝试从同文件夹获取 cover.jpg/png
-                    tryLoadFolderCover(file, title, tag);
+                    tryLoadFolderCover(file, title, tag, myCoverId);
                 }
             },
             onError: function (error) {
+                if (myCoverId !== coverRequestId) return;
                 // 读取标签失败，也尝试从同文件夹获取封面
-                tryLoadFolderCover(file, title, null);
+                tryLoadFolderCover(file, title, null, myCoverId);
             }
         });
     }
 
     // 尝试从同文件夹加载封面图片 (cover.jpg/cover.png)
-    function tryLoadFolderCover(file, title, tag) {
+    function tryLoadFolderCover(file, title, tag, myCoverId) {
         // 获取当前歌曲的相对路径
         const songPath = file.webkitRelativePath || file.name;
         // 提取文件夹路径（去掉文件名）
@@ -2236,12 +2450,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 const coverFile = allFilesMap.get(coverPath);
                 const reader = new FileReader();
                 reader.onload = function (e) {
+                    if (myCoverId !== coverRequestId) return;
                     const base64 = e.target.result;
-                    applyCoverImage(base64, title, tag);
+                    applyCoverImage(base64, title, tag, myCoverId);
                 };
                 reader.onerror = function () {
+                    if (myCoverId !== coverRequestId) return;
                     // 读取失败，使用默认
-                    resetToDefaultCover(title);
+                    resetToDefaultCover(title, myCoverId);
                 };
                 reader.readAsDataURL(coverFile);
                 return;
@@ -2249,11 +2465,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         // 没有找到封面，使用默认
-        resetToDefaultCover(title);
+        resetToDefaultCover(title, myCoverId);
     }
 
     // 应用封面图片到界面
-    function applyCoverImage(base64, title, tag) {
+    function applyCoverImage(base64, title, tag, myCoverId) {
+        if (myCoverId !== coverRequestId) return;
         const artist = tag?.tags?.artist || 'Unknown Artist';
         const album = tag?.tags?.album || 'Unknown Album';
         // 尝试从 tag 中获取实际图片格式，否则根据 base64 前缀判断，默认 jpeg
@@ -2279,6 +2496,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const img = new Image();
         img.onload = function () {
+            if (myCoverId !== coverRequestId) return;
             currentAlbumColor = getAverageColor(img);
             updateThemeBackground();
 
@@ -2315,7 +2533,9 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 重置为默认封面
-    function resetToDefaultCover(title) {
+    function resetToDefaultCover(title, myCoverId) {
+        // 令牌不一致说明期间已切到别的歌曲，不能覆盖新歌的封面状态
+        if (myCoverId !== undefined && myCoverId !== coverRequestId) return;
         currentAlbumColor = null;
         updateThemeBackground();
         resetIcons();
@@ -2334,7 +2554,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 处理内嵌封面图片
-    function processCoverImage(picture, tag, title) {
+    function processCoverImage(picture, tag, title, myCoverId) {
+        if (myCoverId !== coverRequestId) return;
         let base64String = "";
         for (let i = 0; i < picture.data.length; i++) {
             base64String += String.fromCharCode(picture.data[i]);
@@ -2354,6 +2575,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const img = new Image();
         img.onload = function () {
+            if (myCoverId !== coverRequestId) return;
             currentAlbumColor = getAverageColor(img);
             updateThemeBackground();
 
@@ -2389,8 +2611,16 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
+    // 只匹配 rel 恰好为 "icon" 的 link。
+    // rel*='icon' 是子串匹配，会连 rel="apple-touch-icon" 一起命中，
+    // 导致 180x180 的 iOS 主屏图标被换成 64x64 的画布图。
+    function getIconLinks() {
+        return Array.from(document.querySelectorAll("link[rel]"))
+            .filter(link => link.getAttribute('rel').trim().toLowerCase() === 'icon');
+    }
+
     function setAllIcons(href) {
-        const links = document.querySelectorAll("link[rel*='icon']");
+        const links = getIconLinks();
         links.forEach(link => link.href = href);
 
         // 传递给 Electron 主进程更新应用/任务栏图标
@@ -2404,7 +2634,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     function resetIcons() {
-        const links = document.querySelectorAll("link[rel*='icon']");
+        const links = getIconLinks();
         links.forEach(link => {
             // 恢复默认图标
             link.href = "./static/img/icon/favicon-32x32.png";
@@ -2459,13 +2689,10 @@ document.addEventListener('DOMContentLoaded', function () {
             songs.unshift(songData);
             currentSongIndex = 0;
             currentSeek = 0;
+            currentSong = songData;
 
             // 重新渲染列表
-            songList.innerHTML = '';
-            songs.forEach(song => {
-                const listItem = createSongListItem(song);
-                songList.appendChild(listItem);
-            });
+            renderSongList();
 
             // 如果有 blob（首次添加），直接播放；否则从缓存/网络加载
             if (blob) {
@@ -2507,7 +2734,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
-        gainNode = audioContext.createGain();
+        createGainNode();
 
         // 将 blob 转为 ArrayBuffer
         blob.arrayBuffer().then(arrayBuffer => {
@@ -2549,7 +2776,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
-        gainNode = audioContext.createGain();
+        createGainNode();
 
         // 尝试从 IndexedDB 缓存加载
         const cacheKey = `song_${server}_${id}_${song.onlineInfo.br}`;
@@ -2673,7 +2900,9 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         if (requestId === loadRequestId) {
-            console.error('所有音质下载均失败');
+            // 走到这里说明所有音质都失败了。与解码失败同样会把播放器卡在
+            // isPlaying=true / pitchShifter=null 的死状态，必须走同一个复位路径。
+            handleDecodeError(song, new Error('所有音质下载均失败'));
         }
     }
 
@@ -2711,10 +2940,12 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (currentRequestId !== loadRequestId) return;
                 setupPitchShifter(audioBuffer, song);
             }, function (error) {
-                console.log("Decode error: " + error.err);
+                if (currentRequestId !== loadRequestId) return;
+                handleDecodeError(song, error);
             });
         }).catch(e => {
-            console.error("Blob read error:", e);
+            if (currentRequestId !== loadRequestId) return;
+            handleDecodeError(song, e);
         });
     }
 
@@ -2765,24 +2996,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const {id, server} = song.onlineInfo;
         const coverKey = `cover_${server}_${id}`;
+        // 与本地歌曲共用同一套封面令牌，快速切歌时旧请求不会覆盖新歌
+        const coverIdOnline = ++coverRequestId;
 
         // 检查是否有预加载的封面 blob（从 player 传递过来的）
         if (song.coverBlob) {
             const reader = new FileReader();
             reader.onload = function (e) {
+                if (coverIdOnline !== coverRequestId) return;
                 const base64 = e.target.result;
-                applyOnlineCover(base64, song);
+                applyOnlineCover(base64, song, coverIdOnline);
             };
             reader.readAsDataURL(song.coverBlob);
             return;
         }
 
         // 从 IndexedDB 加载封面
-        loadCoverFromCache(coverKey, song);
+        loadCoverFromCache(coverKey, song, coverIdOnline);
     }
 
     // 从 IndexedDB 缓存加载封面
-    function loadCoverFromCache(coverKey, song) {
+    function loadCoverFromCache(coverKey, song, coverIdOnline) {
+        if (coverIdOnline !== coverRequestId) return;
         const request = indexedDB.open('SecretPlayerCache', 1);
         request.onupgradeneeded = (e) => {
             const db = e.target.result;
@@ -2791,40 +3026,46 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         };
         request.onsuccess = (e) => {
+            if (coverIdOnline !== coverRequestId) return;
             const db = e.target.result;
             if (!db.objectStoreNames.contains('coverCache')) {
                 // 没有封面缓存存储，使用默认封面
-                applyDefaultOnlineCover(song);
+                applyDefaultOnlineCover(song, coverIdOnline);
                 return;
             }
             const tx = db.transaction('coverCache', 'readonly');
             const store = tx.objectStore('coverCache');
             const getRequest = store.get(coverKey);
             getRequest.onsuccess = () => {
+                if (coverIdOnline !== coverRequestId) return;
                 const result = getRequest.result;
                 if (result && result.blob && result.blob.size > 0) {
                     const reader = new FileReader();
                     reader.onload = function (e) {
+                        if (coverIdOnline !== coverRequestId) return;
                         const base64 = e.target.result;
-                        applyOnlineCover(base64, song);
+                        applyOnlineCover(base64, song, coverIdOnline);
                     };
                     reader.readAsDataURL(result.blob);
                 } else {
                     // 缓存中没有封面，使用默认封面
-                    applyDefaultOnlineCover(song);
+                    applyDefaultOnlineCover(song, coverIdOnline);
                 }
             };
             getRequest.onerror = () => {
-                applyDefaultOnlineCover(song);
+                if (coverIdOnline !== coverRequestId) return;
+                applyDefaultOnlineCover(song, coverIdOnline);
             };
         };
         request.onerror = () => {
-            applyDefaultOnlineCover(song);
+            if (coverIdOnline !== coverRequestId) return;
+            applyDefaultOnlineCover(song, coverIdOnline);
         };
     }
 
     // 应用在线歌曲封面到界面
-    function applyOnlineCover(base64, song) {
+    function applyOnlineCover(base64, song, coverIdOnline) {
+        if (coverIdOnline !== coverRequestId) return;
         const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
         const artist = song.onlineInfo?.artist || 'Unknown Artist';
         const album = song.onlineInfo?.album || 'Unknown Album';
@@ -2842,6 +3083,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const img = new Image();
         img.onload = function () {
+            if (coverIdOnline !== coverRequestId) return;
             currentAlbumColor = getAverageColor(img);
             updateThemeBackground();
 
@@ -2878,7 +3120,8 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     // 应用默认在线歌曲封面（无封面时）
-    function applyDefaultOnlineCover(song) {
+    function applyDefaultOnlineCover(song, coverIdOnline) {
+        if (coverIdOnline !== undefined && coverIdOnline !== coverRequestId) return;
         const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
         const artist = song.onlineInfo?.artist || 'Unknown Artist';
         const album = song.onlineInfo?.album || 'Unknown Album';
@@ -2976,11 +3219,7 @@ document.addEventListener('DOMContentLoaded', function () {
                             songs.splice(indexToRemove, 1);
                         });
 
-                        songList.innerHTML = '';
-                        songs.forEach(song => {
-                            const listItem = createSongListItem(song);
-                            songList.appendChild(listItem);
-                        });
+                        renderSongList();
 
                         selectedSongs.clear();
                         lastSelectedSong = null;
@@ -2988,46 +3227,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
                         if (songs.length === 0) {
                             currentSongIndex = 0;
-                            if (pitchShifter) {
-                                try {
-                                    if (typeof pitchShifter.stop === 'function') {
-                                        pitchShifter.stop();
-                                    } else {
-                                        pitchShifter.disconnect();
-                                    }
-                                } catch (e) {
-                                    console.error("Error stopping pitchShifter:", e);
-                                }
-                                pitchShifter = null;
-                            }
-                            isPlaying = false;
-                            stopVisualizer();
-                            playPauseBtn.innerHTML = '<i class="fa-solid fa-play"></i>';
-                            i18n.updatePageTexts();
-                            if ('mediaSession' in navigator) {
-                                navigator.mediaSession.playbackState = 'paused';
-                            }
-                            progressBar.style.width = '0%';
-                            currentAlbumColor = null;
-                            updateThemeBackground();
-                            resetIcons();
-                            // 恢复默认标题
-                            const titleText1 = playerTitle.querySelector('.sidebar-title-text');
-                            if (titleText1) {
-                                titleText1.textContent = 'Music Player';
-                                titleText1.style.setProperty('--marquee-distance', '0px');
-                            } else {
-                                playerTitle.textContent = 'Music Player';
-                            }
-                            playerTitle.classList.remove('overflow');
-                            playerTitle.title = 'Music Player';
-                            document.title = 'Music Player';
-                            // 隐藏专辑封面
-                            const albumCoverImg = document.getElementById('album-cover');
-                            if (albumCoverImg) {
-                                albumCoverImg.src = '';
-                                albumCoverImg.style.display = 'none';
-                            }
+                            currentSong = null;
+                            resetToEmptyPlaylistState();
                         } else {
                             if (removedPlaying) {
                                 currentSongIndex = Math.min(playingSongOriginalIndex, songs.length - 1);
@@ -3035,7 +3236,11 @@ document.addEventListener('DOMContentLoaded', function () {
                                 playSong(songs[currentSongIndex]);
                             } else {
                                 currentSongIndex = songs.indexOf(playingSong);
-                                if (currentSongIndex === -1) currentSongIndex = 0;
+                                if (currentSongIndex === -1) {
+                                    currentSongIndex = 0;
+                                    // 原当前歌曲已被删除，同步引用避免指向不存在的歌曲
+                                    currentSong = songs[0] || null;
+                                }
                             }
                         }
 
@@ -3049,7 +3254,11 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'arrowleft':
                 if (pitchShifter) {
                     event.preventDefault();
-                    pitchShifter.percentagePlayed = Math.max(0, (currentSeek - 10) / pitchShifter.duration);
+                    // 走 seekToTime 以正确累积：原实现直接写 percentagePlayed，
+                    // 既不更新 currentSeek（暂停时按一次只走 10 秒），
+                    // 也不刷新进度条（暂停时看起来毫无反应）
+                    // 上限 0.999：不跳到真正的结尾，避免恢复播放时误触发自动下一首
+                    seekToTime(currentSeek - 10, false, 0.999);
                 }
                 break;
             case 'arrowup':
@@ -3066,7 +3275,7 @@ document.addEventListener('DOMContentLoaded', function () {
             case 'arrowright':
                 if (pitchShifter) {
                     event.preventDefault();
-                    pitchShifter.percentagePlayed = Math.min(0.999, (currentSeek + 10) / pitchShifter.duration);
+                    seekToTime(currentSeek + 10, false, 0.999);
                 }
                 break;
             case 'arrowdown':
