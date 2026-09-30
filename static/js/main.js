@@ -1319,11 +1319,22 @@ document.addEventListener('DOMContentLoaded', function () {
             singleInput.value = '';
         });
 
+        // 判断当前拖拽是否携带外部文件（列表内排序只带 text/plain，不应触发导入高亮）
+        function isFileDrag(e) {
+            const types = e.dataTransfer && e.dataTransfer.types;
+            if (!types) return false;
+            return Array.prototype.indexOf.call(types, 'Files') !== -1;
+        }
+
         // 拖拽事件绑定到 document，确保从外部拖入文件时能正确触发
         document.addEventListener('dragover', function (e) {
             e.preventDefault();
             e.stopPropagation();
-            dragDropZone.classList.add('dragover');
+            if (isFileDrag(e)) {
+                dragDropZone.classList.add('dragover');
+            } else {
+                dragDropZone.classList.remove('dragover');
+            }
         });
 
         document.addEventListener('dragleave', function (e) {
@@ -1369,6 +1380,22 @@ document.addEventListener('DOMContentLoaded', function () {
             seekToTime((clickX / progressWidth) * pitchShifter.duration);
         });
         searchInput.addEventListener('input', handleSearchInput);
+
+        // 浏览器在前进/后退时会恢复表单控件的旧值（搜索框文本、滑轨档位），
+        // 但页面 JS 状态是全新的，导致显示与实际状态不一致。这里在页面重新显示时统一复位。
+        window.addEventListener('pageshow', function (e) {
+            // persisted 为 true 表示来自 bfcache 缓存，页面状态本身是完好的，无需复位
+            if (e.persisted) return;
+
+            searchInput.value = '';
+            searchInput.classList.remove('error');
+            pitchShiftSelect.value = '0';
+            tempoShiftSelect.value = '1';
+            handlePitchShiftChange();
+            if (tempoShiftVal) {
+                tempoShiftVal.textContent = '1.0x';
+            }
+        });
 
         if (deleteSelectedBtn) {
             deleteSelectedBtn.addEventListener('click', () => {
