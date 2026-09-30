@@ -1253,7 +1253,8 @@ document.addEventListener('DOMContentLoaded', function () {
         // 使用专辑封面色或融入背景的颜色 (配合透明度使用)
         const baseColor = currentDisplayColor ? currentDisplayColor : (isDark ? '255, 255, 255' : '100, 116, 139');
 
-        const sliceWidth = width * 1.0 / bufferLength;
+        // 末点落在 x = width，避免右侧收尾线斜切进画布内部
+        const sliceWidth = width / Math.max(1, bufferLength - 1);
         let points = [];
 
         // 收集平滑曲线的点，减少高度拉伸
