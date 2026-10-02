@@ -3,6 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' data: https://cdnjs.cloudflare.com; img-src 'self' data: blob: https:; media-src 'self' blob:; connect-src 'self' https:; object-src 'none'; base-uri 'none'; form-action 'none';">
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Music Player</title>
@@ -10,10 +11,6 @@
     <link rel="stylesheet" href="./static/css/style.css">
 
     <script>
-        // 必须在首次绘制前应用已保存的主题。
-        // main.js 的 initTheme() 要等 DOMContentLoaded 才运行，浏览器会先用
-        // :root 的浅色变量绘制一帧，深色主题用户每次加载都会看到白色闪屏。
-        // 这里同步执行，抢在样式计算之前写入 data-theme。
         (function () {
             try {
                 var savedTheme = localStorage.getItem('theme');
@@ -52,12 +49,12 @@
         <h1 id="player-title" title="Music Player" class="sidebar-title"><span
                 class="sidebar-title-text">Music Player</span></h1>
         <div class="file-selector">
-            <label for="folder-input" class="btn-style btn-file">
+            <label for="folder-input" class="btn-style">
                 <i class="fa-solid fa-folder-open"></i> <span data-i18n="selectFolder">文件夹</span>
                 <input type="file" id="folder-input" class="hidden" webkitdirectory directory
                        accept=".mp3,.wav,.ogg,.m4a,.flac,.aac,.aiff,.aif,.amr,.wma,.mid,.midi,.opus,.weba,audio/mpeg,audio/wav,audio/ogg,audio/x-m4a,audio/flac,audio/aac,audio/aiff,audio/x-aiff,audio/amr,audio/x-ms-wma,audio/midi,audio/opus,audio/webm">
             </label>
-            <label for="single-song-input" class="btn-style btn-file">
+            <label for="single-song-input" class="btn-style">
                 <i class="fa-solid fa-music"></i> <span data-i18n="selectFile">文件</span>
                 <input type="file" id="single-song-input" class="hidden"
                        accept=".mp3,.wav,.ogg,.m4a,.flac,.aac,.aiff,.aif,.amr,.wma,.mid,.midi,.opus,.weba,audio/mpeg,audio/wav,audio/ogg,audio/x-m4a,audio/flac,audio/aac,audio/aiff,audio/x-aiff,audio/amr,audio/x-ms-wma,audio/midi,audio/opus,audio/webm"
@@ -71,8 +68,7 @@
             <p><i class="fa-solid fa-cloud-arrow-up text-muted"></i></p>
             <p><span data-i18n="dragDropHint">拖放到此处</span></p>
         </div>
-        <div class="batch-ops-container" id="batch-ops-container"
-             style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; margin-top: 8px; padding: 0 10px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; margin-top: 8px; padding: 0 10px;">
             <div style="display: flex; gap: 16px;">
                 <button id="select-all-btn" class="btn-transparent hidden" title="全选"><i
                         class="fa-solid fa-check-double"></i></button>
@@ -176,7 +172,16 @@
 <script src="./static/js/i18n.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
 <script src="./static/js/main.js"></script>
-<script src="./static/js/player.js"></script>
+<script>
+    (function () {
+        var plugin = document.createElement('script');
+        plugin.src = './static/js/player.js';
+        plugin.onerror = function () {
+            console.info('[LocalPitchPlayer] player.js 未加载');
+        };
+        (document.body || document.head).appendChild(plugin);
+    })();
+</script>
 </body>
 
 </html>

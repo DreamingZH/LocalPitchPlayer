@@ -10,6 +10,13 @@
   "build": {
     "appId": "com.dreamingzh.localpitchplayer",
     "productName": "Local Pitch Player",
+    "files": [
+      "index.html",
+      "electron-main.js",
+      "static/**/*",
+      "LocalPitchPlayer.png",
+      "package.json"
+    ],
     "mac": {
       "target": [
         "dmg",

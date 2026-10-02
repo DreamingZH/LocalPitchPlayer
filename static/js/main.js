@@ -1067,6 +1067,10 @@ document.addEventListener('DOMContentLoaded', function () {
     // → Image.onload）没有对应机制，快速切歌时先返回的旧请求会覆盖新歌曲的
     // 主题色、favicon 与 mediaSession 元数据。
     let coverRequestId = 0;
+    // 全局快捷键门控谓词：返回 true 表示本次按键由外部接管
+    let shortcutGate = null;
+    // 歌曲源处理器：{canHandle(song) -> boolean, play(song) -> void}
+    let songSourceHandler = null;
     let currentAlbumColor = null; // null或 "r, g, b"
     let currentDisplayColor = null; // 经过当前明暗主题优化后的展示色
     let activeThemeIndex = 1;     // 用于在主题渐变伪元素之间切换 (1 或 2)
@@ -1708,7 +1712,16 @@ document.addEventListener('DOMContentLoaded', function () {
         const listItem = document.createElement('div');
         listItem.classList.add('song-item');
         listItem.draggable = true;
-        listItem.innerHTML = `<i class="fa-solid fa-music"></i><span class="song-item-title" title="${song.name}">${song.name}</span>`;
+        // song.name 来自本地文件名或外部接口，属于不可信输入，
+        // 必须走 textContent/title 属性赋值，不能拼进 innerHTML
+        const icon = document.createElement('i');
+        icon.className = 'fa-solid fa-music';
+        const title = document.createElement('span');
+        title.className = 'song-item-title';
+        title.textContent = song.name;
+        title.title = song.name;
+        listItem.appendChild(icon);
+        listItem.appendChild(title);
 
         listItem.addEventListener('click', (e) => {
             const index = songs.indexOf(song);
@@ -1944,37 +1957,50 @@ document.addEventListener('DOMContentLoaded', function () {
         currentSong = song;
 
         // 小屏幕时点击播放后自动关闭播放列表
-        if (window.innerWidth <= 800 && sidebarLayout && sidebarLayout.classList.contains('show-mobile')) {
-            sidebarLayout.classList.remove('show-mobile');
-        }
+        closeMobilePlaylistIfOpen();
 
-        // 在线歌曲：从缓存或网络加载
-        if (song.isOnline) {
-            playOnlineSongFromCache(song);
+        // 非本地文件来源的歌曲：交给已注册的歌曲源处理器
+        if (songSourceHandler && typeof songSourceHandler.canHandle === 'function'
+            && songSourceHandler.canHandle(song)) {
+            // 处理器需要完整的外部元数据才能取流；缺了就走复位路径，
+            // 否则它会直接返回，把播放器留在 isPlaying=true 且 pitchShifter=null
+            // 的死状态（正是 playbackFailed 注释里说要避免的那种）
+            if (!song.onlineInfo || !song.onlineInfo.id) {
+                console.error('Song is missing onlineInfo:', song.name);
+                handleDecodeError(song, new Error('missing onlineInfo'));
+                return;
+            }
+            // 先接管加载令牌：处理器可能提前返回（如引擎未就绪），
+            // 若不失效旧请求，上一首的 pitchShifter 会继续发声，
+            // 而界面已经切到新歌，形成"标题是A、声音是B、暂停停错歌"。
+            // 处理器内部通常还会再调一次 beginPlayback，那是幂等的。
+            beginPlayback();
+            songSourceHandler.play(song);
             return;
         }
 
+        // 没有音频源的条目不能落入本地文件路径：
+        // FileReader.readAsArrayBuffer(undefined) 会抛 TypeError，
+        // 被 catch 成 handleFileError → songs.splice，把条目从列表里删掉。
+        // 这类歌曲本身不带 File 对象，缺失属正常情况，不该当成"文件被删除"。
+        if (!song.file) {
+            console.error('No audio source for song:', song.name);
+            handleDecodeError(song, new Error('no audio source'));
+            return;
+        }
+
+        // 切到本地歌曲时通知处理器熄灭"正在播放"高亮。
+        // 它只在自己的 play() 里点亮结果行，主播放器切到本地文件时
+        // 没有回调能告诉它，那一行会一直亮着。
+        if (songSourceHandler && typeof songSourceHandler.onLocalSongPlayed === 'function') {
+            try { songSourceHandler.onLocalSongPlayed(); } catch (e) { /* 处理器异常不影响播放 */ }
+        }
+
         // 本地歌曲：从文件读取
-        const currentRequestId = ++loadRequestId;
-
-        if (pitchShifter) {
-            try {
-                // 如果已定义 stop 方法则调用，彻底释放内存
-                if (typeof pitchShifter.stop === 'function') {
-                    pitchShifter.stop();
-                } else {
-                    pitchShifter.disconnect();
-                }
-            } catch (e) {
-                console.error("Error stopping pitchShifter:", e);
-            }
-            pitchShifter = null; // 解除全局引用
-        }
-
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-        createGainNode();
+        // 与外部来源共用 beginPlayback：它会 ++loadRequestId、停掉旧移调器、
+        // 取消在跑的淡入淡出、重建增益节点。两处各写一份必然会走漏——
+        // 之前本地路径就漏了取消淡出，淡出期间切歌会把新歌误停。
+        const currentRequestId = beginPlayback();
 
         const reader = new FileReader();
         reader.onload = (e) => {
@@ -2048,10 +2074,28 @@ document.addEventListener('DOMContentLoaded', function () {
         // 只有当失败的仍是当前歌曲时才复位，避免覆盖掉用户已切到的新歌
         if (currentSong !== song) return;
 
-        pitchShifter = null;
+        // 必须真正停掉节点再置空：只断开引用的话，ScriptProcessorNode 仍挂在
+        // gainNode → analyserNode → destination 上继续发声，
+        // 表现为"界面显示已停止、进度条归零，但声音还在放"的幽灵状态。
+        if (pitchShifter) {
+            try {
+                if (typeof pitchShifter.stop === 'function') {
+                    pitchShifter.stop();
+                } else {
+                    pitchShifter.disconnect();
+                }
+            } catch (e) {
+                console.error("Error stopping pitchShifter:", e);
+            }
+            pitchShifter = null;
+        }
         isPlaying = false;
         isFadingOut = false;
         currentSeek = 0;
+        // 与 resetToEmptyPlaylistState 保持一致：淡入/淡出计时器若仍在跑，
+        // 会继续往已解绑的增益节点写音量
+        cancelFadeIn();
+        cancelFadeOut();
         stopVisualizer();
         setPlayPauseButtonState(false);
         if ('mediaSession' in navigator) {
@@ -2669,38 +2713,39 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // ========== 在线歌曲播放支持 ==========
-    // 添加在线歌曲到播放列表并播放
-    // blob: 首次添加时的音频数据（可选），用于立即播放
-    function playOnlineSong(songData, blob = null) {
-        if (!songData) return;
+    // 小屏幕时点击播放后自动关闭播放列表
+    function closeMobilePlaylistIfOpen() {
+        if (window.innerWidth <= 800 && sidebarLayout && sidebarLayout.classList.contains('show-mobile')) {
+            sidebarLayout.classList.remove('show-mobile');
+        }
+    }
+
+    // ========== 播放列表扩展接口 ==========
+    // 把外部歌曲加入播放列表并切换为当前曲目，返回歌曲对象。
+    // 只负责播放列表簿记（去重/下标/渲染/高亮/滚动），实际播放由调用方触发。
+    function addSong(songData) {
+        if (!songData) return null;
+
+        closeMobilePlaylistIfOpen();
 
         // 去重检查：检查是否已存在相同歌曲
         const dedupeKey = `${songData.name}|${songData.size}`;
         const existingIndex = songs.findIndex(s => `${s.name}|${s.size}` === dedupeKey);
 
         if (existingIndex > -1) {
-            // 已存在：直接播放
+            // 已存在：直接切换到该曲目
             currentSongIndex = existingIndex;
-            currentSeek = 0;
-            playSong(songs[currentSongIndex]);
         } else {
-            // 不存在：添加到列表顶部并播放
+            // 不存在：添加到列表顶部
             songs.unshift(songData);
             currentSongIndex = 0;
-            currentSeek = 0;
-            currentSong = songData;
 
             // 重新渲染列表
             renderSongList();
-
-            // 如果有 blob（首次添加），直接播放；否则从缓存/网络加载
-            if (blob) {
-                playOnlineSongFromBlob(songs[currentSongIndex], blob);
-            } else {
-                playOnlineSongFromCache(songs[currentSongIndex]);
-            }
         }
+
+        currentSeek = 0;
+        currentSong = songs[currentSongIndex];
 
         // 更新 active 类
         const songItems = songList.querySelectorAll('.song-item');
@@ -2710,16 +2755,19 @@ document.addEventListener('DOMContentLoaded', function () {
 
         // 滚动到正在播放的歌曲
         scrollToActiveSong();
+
+        return currentSong;
     }
 
-    // 从 blob 直接播放在线歌曲（首次添加时使用）
-    function playOnlineSongFromBlob(song, blob) {
-        if (!song || !blob) return;
-
-        const currentRequestId = ++loadRequestId;
+    // ========== 播放引擎接口 ==========
+    // 开始一次新的播放：使旧的异步加载失效、停掉旧的移调器、恢复音频上下文。
+    // 返回本次播放的加载令牌，后续所有异步回调都要用它判断是否已被新请求取代。
+    function beginPlayback() {
+        const loadToken = ++loadRequestId;
 
         if (pitchShifter) {
             try {
+                // 如果已定义 stop 方法则调用，彻底释放内存
                 if (typeof pitchShifter.stop === 'function') {
                     pitchShifter.stop();
                 } else {
@@ -2728,229 +2776,97 @@ document.addEventListener('DOMContentLoaded', function () {
             } catch (e) {
                 console.error("Error stopping pitchShifter:", e);
             }
-            pitchShifter = null;
+            pitchShifter = null; // 解除全局引用
         }
 
         if (audioContext.state === 'suspended') {
             audioContext.resume();
         }
+        // 淡出中的定时器持有的是即将被替换的旧 gainNode：不取消的话它会
+        // 继续往已断开的节点写音量，结束时还会触发 pauseSong 的清理回调，
+        // 可能把刚接上的新一首给误停。
+        cancelFadeIn();
+        cancelFadeOut();
+        isFadingOut = false;
         createGainNode();
 
-        // 将 blob 转为 ArrayBuffer
-        blob.arrayBuffer().then(arrayBuffer => {
-            if (currentRequestId !== loadRequestId) return;
-            audioContext.decodeAudioData(arrayBuffer, function (audioBuffer) {
-                if (currentRequestId !== loadRequestId) return;
-                setupPitchShifter(audioBuffer, song);
-            }, function (error) {
-                console.log("Decode error: " + error.err);
-                // 解码失败，尝试重新下载
-                playOnlineSongFromCache(song);
-            });
-        }).catch(e => {
-            console.error("Blob read error:", e);
-            playOnlineSongFromCache(song);
-        });
+        return loadToken;
     }
 
-    // 从缓存或网络加载在线歌曲
-    function playOnlineSongFromCache(song) {
-        if (!song || !song.isOnline || !song.onlineInfo) return;
+    // 加载令牌是否仍是当前有效的一次播放
+    function isCurrentLoad(loadToken) {
+        return loadToken === loadRequestId;
+    }
 
-        const {id, server} = song.onlineInfo;
-        const currentRequestId = ++loadRequestId;
-
-        if (pitchShifter) {
-            try {
-                if (typeof pitchShifter.stop === 'function') {
-                    pitchShifter.stop();
-                } else {
-                    pitchShifter.disconnect();
-                }
-            } catch (e) {
-                console.error("Error stopping pitchShifter:", e);
-            }
-            pitchShifter = null;
-        }
-
-        if (audioContext.state === 'suspended') {
-            audioContext.resume();
-        }
-        createGainNode();
-
-        // 尝试从 IndexedDB 缓存加载
-        const cacheKey = `song_${server}_${id}_${song.onlineInfo.br}`;
-        const request = indexedDB.open('SecretPlayerCache', 1);
-
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('audioCache')) {
-                const store = db.createObjectStore('audioCache', {keyPath: 'id'});
-                store.createIndex('timestamp', 'timestamp', {unique: false});
-            }
-        };
-
-        request.onsuccess = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('audioCache')) {
-                // 没有缓存存储，重新下载
-                downloadAndPlayOnlineSong(song, currentRequestId);
+    // 解码 blob 并开始播放：外部提交的音频数据（非本地文件）的统一入口。
+    // 成功 resolve(true)；令牌已失效 resolve(false)；解码/读取失败 reject，
+    // 由调用方决定是回退重试还是复位播放器（playbackFailed）。
+    // coverLoader: 可选封面加载回调，在移调器就位后调用。
+    function playBlob(blob, song, loadToken, coverLoader) {
+        return blob.arrayBuffer().then(arrayBuffer => new Promise((resolve, reject) => {
+            if (loadToken !== loadRequestId) {
+                resolve(false);
                 return;
             }
-
-            const tx = db.transaction('audioCache', 'readonly');
-            const store = tx.objectStore('audioCache');
-            const getRequest = store.get(cacheKey);
-
-            getRequest.onsuccess = () => {
-                const result = getRequest.result;
-                if (result && result.blob && result.blob.size > 0) {
-                    // 缓存命中
-                    console.log(`[缓存命中] ${song.onlineInfo.originalName} @ ${song.onlineInfo.br}kbps`);
-                    playBlob(result.blob, song, currentRequestId);
-                } else {
-                    // 缓存未命中，尝试其他音质
-                    tryLoadOtherQuality(song, db, currentRequestId);
-                }
-            };
-
-            getRequest.onerror = () => {
-                downloadAndPlayOnlineSong(song, currentRequestId);
-            };
-        };
-
-        request.onerror = () => {
-            downloadAndPlayOnlineSong(song, currentRequestId);
-        };
-    }
-
-    // 尝试加载其他音质的缓存
-    function tryLoadOtherQuality(song, db, currentRequestId) {
-        const {id, server} = song.onlineInfo;
-        const brFallback = [400, 380, 320, 128];
-
-        const tx = db.transaction('audioCache', 'readonly');
-        const store = tx.objectStore('audioCache');
-
-        // 遍历所有音质查找缓存
-        let found = false;
-        let pendingCount = brFallback.length;
-        let downloading = false; // 防止重复下载
-
-        brFallback.forEach(br => {
-            const cacheKey = `song_${server}_${id}_${br}`;
-            const getRequest = store.get(cacheKey);
-            getRequest.onsuccess = () => {
-                pendingCount--;
-                if (!found && getRequest.result && getRequest.result.blob && getRequest.result.blob.size > 0) {
-                    found = true;
-                    console.log(`[缓存命中-其他音质] ${song.onlineInfo.originalName} @ ${br}kbps`);
-                    playBlob(getRequest.result.blob, song, currentRequestId);
-                } else if (pendingCount === 0 && !found && !downloading) {
-                    // 所有音质都没有缓存，重新下载
-                    downloading = true;
-                    downloadAndPlayOnlineSong(song, currentRequestId);
-                }
-            };
-            getRequest.onerror = () => {
-                pendingCount--;
-                if (pendingCount === 0 && !found && !downloading) {
-                    downloading = true;
-                    downloadAndPlayOnlineSong(song, currentRequestId);
-                }
-            };
-        });
-    }
-
-    // 下载在线歌曲并播放
-    async function downloadAndPlayOnlineSong(song, requestId) {
-        if (!song || !song.isOnline || !song.onlineInfo) return;
-
-        const {id, server} = song.onlineInfo;
-        const brFallback = [400, 380, 320, 128];
-
-        console.log(`[重新下载] ${song.onlineInfo.originalName}`);
-
-        for (const br of brFallback) {
-            try {
-                const url = `${atob('aHR0cHM6Ly9hcGkuYmFrYS5wbHVzL21ldGluZy8=')}?server=${server}&type=url&id=${id}&br=${br}`;
-                const res = await fetch(url, {redirect: 'follow'});
-                if (!res.ok) continue;
-
-                const audioUrl = res.url;
-                if (!audioUrl || audioUrl.includes('.html') || audioUrl.includes('error')) continue;
-
-                const response = await fetch(audioUrl);
-                if (!response.ok) continue;
-
-                const blob = await response.blob();
-                if (blob.size < 1000) continue;
-
-                // 保存到缓存
-                const cacheKey = `song_${server}_${id}_${br}`;
-                saveBlobToCache(cacheKey, blob, song);
-
-                if (requestId === loadRequestId) {
-                    playBlob(blob, song, requestId);
-                }
-                return;
-            } catch (e) {
-                console.warn(`下载音质 ${br} 失败:`, e.message);
-            }
-        }
-
-        if (requestId === loadRequestId) {
-            // 走到这里说明所有音质都失败了。与解码失败同样会把播放器卡在
-            // isPlaying=true / pitchShifter=null 的死状态，必须走同一个复位路径。
-            handleDecodeError(song, new Error('所有音质下载均失败'));
-        }
-    }
-
-    // 将 blob 保存到 IndexedDB 缓存
-    function saveBlobToCache(cacheKey, blob, song) {
-        const request = indexedDB.open('SecretPlayerCache', 1);
-        request.onsuccess = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('audioCache')) return;
-
-            const tx = db.transaction('audioCache', 'readwrite');
-            const store = tx.objectStore('audioCache');
-            const entry = {
-                id: cacheKey,
-                blob: blob,
-                size: blob.size,
-                type: blob.type,
-                timestamp: Date.now(),
-                songInfo: {
-                    name: song.onlineInfo.originalName,
-                    artist: song.onlineInfo.artist,
-                    album: song.onlineInfo.album,
-                    br: song.onlineInfo.br,
-                }
-            };
-            store.put(entry);
-        };
-    }
-
-    // 播放 blob 数据
-    function playBlob(blob, song, currentRequestId) {
-        blob.arrayBuffer().then(arrayBuffer => {
-            if (currentRequestId !== loadRequestId) return;
             audioContext.decodeAudioData(arrayBuffer, function (audioBuffer) {
-                if (currentRequestId !== loadRequestId) return;
-                setupPitchShifter(audioBuffer, song);
+                if (loadToken !== loadRequestId) {
+                    resolve(false);
+                    return;
+                }
+                // setupPitchShifter 在解码回调里执行，抛出时不会回到 Promise
+                // executor，必须自己捕获并 reject，否则这个 Promise 永远不落定，
+                // 调用方的 .catch 与 playbackFailed 都不会触发，播放器卡死。
+                try {
+                    setupPitchShifter(audioBuffer, song, coverLoader);
+                    resolve(true);
+                } catch (e) {
+                    reject(e || new Error('setup failed'));
+                }
             }, function (error) {
-                if (currentRequestId !== loadRequestId) return;
-                handleDecodeError(song, error);
+                // 令牌已失效时按契约视为"无事发生"，与成功路径的
+                // resolve(false) 保持一致；否则过期解码失败会被下一位
+                // 调用方误当成真实解码错误。
+                if (loadToken !== loadRequestId) {
+                    resolve(false);
+                    return;
+                }
+                reject(error || new Error('decode failed'));
             });
-        }).catch(e => {
-            if (currentRequestId !== loadRequestId) return;
-            handleDecodeError(song, e);
-        });
+        }));
+    }
+
+    // 播放失败复位：与本地解码失败走同一条复位路径，
+    // 否则会卡在 isPlaying=true / pitchShifter=null 的死状态。
+    function playbackFailed(song, err, loadToken) {
+        // loadRequestId 从 0 开始自增，令牌只可能是正整数；undefined 表示
+        // 调用方未传令牌，此时应当复位，而不是因为 undefined !== loadRequestId
+        // 直接 return——那正是本函数要避免的 isPlaying=true 死状态。
+        if (loadToken !== undefined && loadToken !== loadRequestId) return;
+        handleDecodeError(song, err);
+    }
+
+    // ========== 封面竞态令牌 ==========
+    function beginCoverLoad() {
+        return ++coverRequestId;
+    }
+
+    function isCoverCurrent(coverToken) {
+        return coverToken === coverRequestId;
+    }
+
+    // 注册全局快捷键门控：外部界面可见时由它接管按键，
+    // 返回 true 表示主界面快捷键本次应被跳过。
+    function setShortcutGate(fn) {
+        shortcutGate = (typeof fn === 'function') ? fn : null;
+    }
+
+    // 注册歌曲源处理器：用于接管非本地文件来源的歌曲
+    function setSongSourceHandler(handler) {
+        songSourceHandler = (handler && typeof handler.play === 'function') ? handler : null;
     }
 
     // 设置 PitchShifter 并开始播放
-    function setupPitchShifter(audioBuffer, song) {
+    function setupPitchShifter(audioBuffer, song, coverLoader) {
         const bufferSize = 16384;
         const ps = new PitchShifter(audioContext, audioBuffer, bufferSize);
         pitchShifter = ps;
@@ -2975,9 +2891,9 @@ document.addEventListener('DOMContentLoaded', function () {
 
         updateTitle(song.name);
 
-        // 加载封面
-        if (song.isOnline) {
-            loadOnlineCover(song);
+        // 加载封面：外部播放通过 coverLoader 注入，本地歌曲读内嵌/文件夹封面
+        if (typeof coverLoader === 'function') {
+            coverLoader(song);
         } else {
             updatePageIcon(song.file, song.name);
         }
@@ -2990,85 +2906,13 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
-    // 从缓存加载在线歌曲封面
-    function loadOnlineCover(song) {
-        if (!song.isOnline || !song.onlineInfo) return;
-
-        const {id, server} = song.onlineInfo;
-        const coverKey = `cover_${server}_${id}`;
-        // 与本地歌曲共用同一套封面令牌，快速切歌时旧请求不会覆盖新歌
-        const coverIdOnline = ++coverRequestId;
-
-        // 检查是否有预加载的封面 blob（从 player 传递过来的）
-        if (song.coverBlob) {
-            const reader = new FileReader();
-            reader.onload = function (e) {
-                if (coverIdOnline !== coverRequestId) return;
-                const base64 = e.target.result;
-                applyOnlineCover(base64, song, coverIdOnline);
-            };
-            reader.readAsDataURL(song.coverBlob);
-            return;
-        }
-
-        // 从 IndexedDB 加载封面
-        loadCoverFromCache(coverKey, song, coverIdOnline);
-    }
-
-    // 从 IndexedDB 缓存加载封面
-    function loadCoverFromCache(coverKey, song, coverIdOnline) {
-        if (coverIdOnline !== coverRequestId) return;
-        const request = indexedDB.open('SecretPlayerCache', 1);
-        request.onupgradeneeded = (e) => {
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('coverCache')) {
-                db.createObjectStore('coverCache', {keyPath: 'id'});
-            }
-        };
-        request.onsuccess = (e) => {
-            if (coverIdOnline !== coverRequestId) return;
-            const db = e.target.result;
-            if (!db.objectStoreNames.contains('coverCache')) {
-                // 没有封面缓存存储，使用默认封面
-                applyDefaultOnlineCover(song, coverIdOnline);
-                return;
-            }
-            const tx = db.transaction('coverCache', 'readonly');
-            const store = tx.objectStore('coverCache');
-            const getRequest = store.get(coverKey);
-            getRequest.onsuccess = () => {
-                if (coverIdOnline !== coverRequestId) return;
-                const result = getRequest.result;
-                if (result && result.blob && result.blob.size > 0) {
-                    const reader = new FileReader();
-                    reader.onload = function (e) {
-                        if (coverIdOnline !== coverRequestId) return;
-                        const base64 = e.target.result;
-                        applyOnlineCover(base64, song, coverIdOnline);
-                    };
-                    reader.readAsDataURL(result.blob);
-                } else {
-                    // 缓存中没有封面，使用默认封面
-                    applyDefaultOnlineCover(song, coverIdOnline);
-                }
-            };
-            getRequest.onerror = () => {
-                if (coverIdOnline !== coverRequestId) return;
-                applyDefaultOnlineCover(song, coverIdOnline);
-            };
-        };
-        request.onerror = () => {
-            if (coverIdOnline !== coverRequestId) return;
-            applyDefaultOnlineCover(song, coverIdOnline);
-        };
-    }
-
-    // 应用在线歌曲封面到界面
-    function applyOnlineCover(base64, song, coverIdOnline) {
-        if (coverIdOnline !== coverRequestId) return;
-        const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
-        const artist = song.onlineInfo?.artist || 'Unknown Artist';
-        const album = song.onlineInfo?.album || 'Unknown Album';
+    // 把封面应用到界面：mediaSession 元数据 + 主题色 + favicon + 封面图
+    // meta: {title, artist, album}，由调用方提供，引擎本身不感知数据来源
+    function applyCover(base64, song, coverToken, meta) {
+        if (coverToken !== coverRequestId) return;
+        const title = (meta && meta.title) || song.name.replace(/\.[^/.]+$/, "");
+        const artist = (meta && meta.artist) || 'Unknown Artist';
+        const album = (meta && meta.album) || 'Unknown Album';
 
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
@@ -3083,7 +2927,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
         const img = new Image();
         img.onload = function () {
-            if (coverIdOnline !== coverRequestId) return;
+            if (coverToken !== coverRequestId) return;
             currentAlbumColor = getAverageColor(img);
             updateThemeBackground();
 
@@ -3119,12 +2963,12 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // 应用默认在线歌曲封面（无封面时）
-    function applyDefaultOnlineCover(song, coverIdOnline) {
-        if (coverIdOnline !== undefined && coverIdOnline !== coverRequestId) return;
-        const title = song.onlineInfo?.originalName || song.name.replace(/\.[^/.]+$/, "");
-        const artist = song.onlineInfo?.artist || 'Unknown Artist';
-        const album = song.onlineInfo?.album || 'Unknown Album';
+    // 应用默认封面（无封面时）：清空封面图与主题色，仅保留元数据
+    function applyDefaultCover(song, coverToken, meta) {
+        if (coverToken !== undefined && coverToken !== coverRequestId) return;
+        const title = (meta && meta.title) || song.name.replace(/\.[^/.]+$/, "");
+        const artist = (meta && meta.artist) || 'Unknown Artist';
+        const album = (meta && meta.album) || 'Unknown Album';
 
         currentAlbumColor = null;
         updateThemeBackground();
@@ -3143,14 +2987,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     }
 
-    // 检查面板是否可见
-    function isSecretPanelVisible() {
-        if (window.SecretPlayer && typeof window.SecretPlayer.isVisible === 'function') {
-            return window.SecretPlayer.isVisible();
-        }
-        return false;
-    }
-
     initTheme();
     setupAudioPlayer();
 
@@ -3159,22 +2995,9 @@ document.addEventListener('DOMContentLoaded', function () {
             return;
         }
 
-        // 如果面板可见，阻止主界面快捷键（除了 ESC 和 F）
-        if (isSecretPanelVisible()) {
-            const key = event.key.toLowerCase();
-            // 只允许 ESC 关闭面板，其他快捷键全部阻止
-            if (key === 'escape') {
-                // 让 player 处理 ESC
-                return;
-            }
-            // 如果焦点在搜索框内，不处理
-            const secretSearchInput = document.getElementById('secret-search-input');
-            if (document.activeElement === secretSearchInput) {
-                return;
-            }
-            // 阻止所有其他快捷键
-            event.preventDefault();
-            event.stopPropagation();
+        // 已注册的快捷键门控（通过 setShortcutGate 注册）：
+        // 返回 true 表示本次按键由注册方接管，主界面快捷键全部跳过。
+        if (shortcutGate && shortcutGate(event)) {
             return;
         }
 
@@ -3347,8 +3170,28 @@ document.addEventListener('DOMContentLoaded', function () {
 
     preventMobileZoom();
 
-    // 导出主播放器接口供 player 使用
+    // 导出通用播放引擎接口，供外部注册与调用。
+    // 契约：
+    //   addSong(songData)                  播放列表簿记，返回歌曲对象
+    //   beginPlayback() -> loadToken       开始一次播放并使旧异步请求失效
+    //   isCurrentLoad(loadToken)           令牌是否仍是当前播放
+    //   playBlob(blob, song, token, coverLoader)  解码并播放外部音频
+    //   playbackFailed(song, err, token)   播放失败复位
+    //   beginCoverLoad()/isCoverCurrent()  封面竞态令牌
+    //   applyCover(base64, song, token, meta) / applyDefaultCover(song, token, meta)
+    //   setShortcutGate(fn)                全局快捷键门控
+    //   setSongSourceHandler(handler)      歌曲源处理器 {canHandle, play}
     window.MainPlayer = {
-        playOnlineSong: playOnlineSong,
+        addSong: addSong,
+        beginPlayback: beginPlayback,
+        isCurrentLoad: isCurrentLoad,
+        playBlob: playBlob,
+        playbackFailed: playbackFailed,
+        beginCoverLoad: beginCoverLoad,
+        isCoverCurrent: isCoverCurrent,
+        applyCover: applyCover,
+        applyDefaultCover: applyDefaultCover,
+        setShortcutGate: setShortcutGate,
+        setSongSourceHandler: setSongSourceHandler,
     };
 })

@@ -17,6 +17,31 @@ const i18n = (function () {
             shuffle: '随机',
             loop: '循环',
             tempoShift: '变速',
+            onlineTitle: '在线音乐',
+            onlineClose: '关闭',
+            onlinePlaceholder: '搜索歌曲、歌手...',
+            onlineSearching: '搜索中...',
+            onlineEmptyMain: '搜索你喜欢的音乐',
+            onlineEmptyHint: '支持网易云、QQ音乐、酷狗',
+            onlineEmptySub: '点击歌曲将添加到主播放列表',
+            onlineNoResults: '没有找到相关歌曲',
+            onlineSearchFailed: '搜索失败，请稍后重试',
+            onlineNotReady: '主播放器未就绪，请稍后重试',
+            onlineBadId: '无法解析歌曲ID',
+            onlineAddFailed: '添加失败: ',
+            onlinePreparing: '准备下载...',
+            onlineCover: '正在获取封面...',
+            onlineAudio: '正在获取音频...',
+            onlineProcessing: '正在处理...',
+            onlineFromCache: '从缓存加载...',
+            onlineAddToPlaylist: '添加到播放列表...',
+            onlineDownloading: '正在下载 {received}/{total} MB',
+            onlineDownloadingUnknown: '正在下载 {received} MB',
+            onlineAddTitle: '添加到播放列表并播放',
+            onlineAdded: '已添加',
+            onlineServerNetease: '网易云',
+            onlineServerTencent: 'QQ音乐',
+            onlineServerKugou: '酷狗',
         },
         'en': {
             selectFolder: 'Select Folder',
@@ -31,6 +56,31 @@ const i18n = (function () {
             shuffle: 'Shuffle',
             loop: 'Loop',
             tempoShift: 'Tempo Shift',
+            onlineTitle: 'Online Music',
+            onlineClose: 'Close',
+            onlinePlaceholder: 'Search songs, artists...',
+            onlineSearching: 'Searching...',
+            onlineEmptyMain: 'Search the music you like',
+            onlineEmptyHint: 'NetEase / QQ Music / Kugou supported',
+            onlineEmptySub: 'Click a song to add it to the playlist',
+            onlineNoResults: 'No songs found',
+            onlineSearchFailed: 'Search failed, please try again later',
+            onlineNotReady: 'Main player not ready, please try again later',
+            onlineBadId: 'Failed to parse song ID',
+            onlineAddFailed: 'Failed to add: ',
+            onlinePreparing: 'Preparing...',
+            onlineCover: 'Fetching cover...',
+            onlineAudio: 'Fetching audio...',
+            onlineProcessing: 'Processing...',
+            onlineFromCache: 'Loading from cache...',
+            onlineAddToPlaylist: 'Adding to playlist...',
+            onlineDownloading: 'Downloading {received}/{total} MB',
+            onlineDownloadingUnknown: 'Downloading {received} MB',
+            onlineAddTitle: 'Add to playlist and play',
+            onlineAdded: 'Added',
+            onlineServerNetease: 'NetEase',
+            onlineServerTencent: 'QQ Music',
+            onlineServerKugou: 'Kugou',
         }
     };
 
@@ -70,10 +120,23 @@ const i18n = (function () {
     /**
      * 获取翻译文本
      * @param {string} key - 翻译键
+     * @param {Object} [params] - 可选的占位符替换，形如 {name: 'x'}；
+     *   翻译值里的 {name} 会被替换。未提供时原样返回占位符。
      * @returns {string} 翻译后的文本
      */
-    function t(key) {
-        return translations[currentLang][key] || translations['en'][key] || key;
+    function t(key, params) {
+        // currentLang 来自 localStorage，没有校验：若存着未知语言代码，
+        // translations[currentLang] 为 undefined，取属性会抛 TypeError。
+        // 一次抛出会中断 updatePageTexts 整段循环，页面半翻译且不刷新
+        // documentElement.lang——回退到 en 更稳妥。
+        const dict = translations[currentLang] || translations['en'];
+        let text = dict[key] || translations['en'][key] || key;
+        if (params && typeof params === 'object') {
+            text = text.replace(/\{(\w+)\}/g, (match, name) =>
+                Object.prototype.hasOwnProperty.call(params, name) ? String(params[name]) : match
+            );
+        }
+        return text;
     }
 
     /**
@@ -124,14 +187,6 @@ const i18n = (function () {
     }
 
     /**
-     * 获取当前语言
-     * @returns {string} 当前语言代码
-     */
-    function getLang() {
-        return currentLang;
-    }
-
-    /**
      * 初始化
      */
     function init() {
@@ -151,11 +206,9 @@ const i18n = (function () {
         init();
     }
 
-    // 导出 API
+    // 导出 API（toggleLang 只在本模块内绑定按钮，无需导出）
     return {
         t,
-        getLang,
-        toggleLang,
         updatePageTexts
     };
 })();

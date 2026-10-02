@@ -95,6 +95,12 @@
     outline: none !important;
 }
 
+/* 弱化文字。此前只有 @media(max-width:425px) 里的 display:none，
+   基础层没有对应规则，类名承诺的"弱化"在绝大多数屏幕上不成立 */
+.text-muted {
+    color: var(--text-muted);
+}
+
 body {
     font-family: var(--font-primary);
     background: var(--bg-tertiary);
@@ -184,7 +190,6 @@ body.theme-bg-2::after {
     resize: horizontal;
     overflow-x: hidden;
     overflow-y: hidden;
-    padding-bottom: 20px;
     transition: background-color var(--transition-slow), border-color var(--transition-slow);
 }
 
@@ -484,11 +489,6 @@ body.theme-bg-2::after {
     color: var(--text-primary);
 }
 
-.song-item.selected {
-    background: var(--accent-medium);
-    border-color: var(--accent);
-}
-
 .song-list.multi-select-mode .song-item:not(.selected) i::before {
     content: "\f0c8" !important;
     font-family: "Font Awesome 6 Free";
@@ -501,11 +501,9 @@ body.theme-bg-2::after {
     font-weight: 900;
 }
 
-.song-item:hover {
-    background: color-mix(in srgb, var(--bg-tertiary) 80%, var(--accent) 20%);
-    color: var(--text-primary);
-}
-
+/* 选中态只保留这一处：原先同名的两块内容不同，靠源码顺序后者胜出，
+   前者（含无效的 border-color——.song-item 从未声明 border-width）
+   是永远不生效的死代码 */
 .song-item.selected {
     background: var(--accent-light);
     color: var(--text-primary);
@@ -973,34 +971,12 @@ body.theme-bg-2::after {
     .right-tools {
         order: 3;
     }
-
-    .now-playing-info {
-        display: none;
-    }
 }
 
 /* 小屏幕进一步优化 */
 @media (max-width: 425px) {
-    .player-controls .btn span {
-        display: none;
-    }
-
     .text-muted {
         display: none;
-    }
-
-    .player-controls .btn {
-        padding: 12px;
-        border-radius: 50%;
-        min-width: 44px;
-        min-height: 44px;
-        font-size: 0 !important; /* 强制隐藏文字，防止JS修改innerHTML移除span后文字显示 */
-        gap: 0; /* 移除图标与文字间的间距 */
-    }
-
-    .player-controls .btn i {
-        font-size: 1rem !important; /* 单独恢复图标大小 */
-        margin: 0;
     }
 }
 
@@ -1053,7 +1029,6 @@ body.theme-bg-2::after {
     color: var(--accent);
 }
 
-/* ========== 🎵 隐藏功能：在线音乐搜索播放器 ========== */
 .secret-panel {
     position: fixed;
     top: 0;
@@ -1219,12 +1194,6 @@ body.theme-bg-2::after {
     color: var(--accent);
 }
 
-.secret-btn-icon.small {
-    width: 32px;
-    height: 32px;
-    font-size: 0.85rem;
-}
-
 .secret-content {
     flex: 1;
     overflow-y: auto;
@@ -1388,20 +1357,36 @@ body.theme-bg-2::after {
 
 .secret-result-actions {
     opacity: 0;
+    /* 仅靠 opacity 隐藏时按钮仍可被鼠标点到（用户会"点中看不见的东西"）。
+       隐藏期间禁用指针事件，:hover / :focus-within / .added 显示时再放开。 */
+    pointer-events: none;
     transition: opacity 0.2s;
     flex-shrink: 0;
 }
 
-.secret-result-item:hover .secret-result-actions {
+.secret-result-item:hover .secret-result-actions,
+.secret-result-item:focus-within .secret-result-actions {
     opacity: 1;
+    pointer-events: auto;
 }
 
+/* 全局 *:focus { outline: none !important } 会击穿普通声明，
+   这里必须同样带 !important，否则键盘焦点环永远不显示 */
+.secret-result-item:focus-visible {
+    outline: 2px solid var(--accent) !important;
+    outline-offset: 2px !important;
+}
+
+/* 添加/下载进行中：屏蔽结果列表的重复点击 */
+.secret-results.busy .secret-result-item {
+    pointer-events: none;
+    opacity: 0.6;
+}
+
+/* 已添加的行常驻显示操作按钮（:focus-within 已在上方合并处理） */
 .secret-result-item.added .secret-result-actions {
     opacity: 1;
-}
-
-.secret-result-item.added .secret-result-title {
-    color: var(--accent);
+    pointer-events: auto;
 }
 
 .secret-download-status {
@@ -1465,10 +1450,6 @@ body.theme-bg-2::after {
 
     .secret-content {
         padding: 12px 16px;
-    }
-
-    .secret-now-playing {
-        padding: 10px 16px;
     }
 }
 
