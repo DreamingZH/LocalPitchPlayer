@@ -1054,6 +1054,8 @@ document.addEventListener('DOMContentLoaded', function () {
     let visualizerCtx = visualizerCanvas ? visualizerCanvas.getContext('2d') : null;
     let visualizerAnimationFrame;
     let visualizerDataArray = null;
+    // 当前已应用到频谱上下文的缩放倍率。0 表示尚未应用过
+    let appliedDpr = 0;
     let pitchShifter;
     let gainNode;
     // 淡入/淡出定时器句柄。两者互斥：新的淡变必须取消上一个，
@@ -1245,6 +1247,16 @@ document.addEventListener('DOMContentLoaded', function () {
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.playbackState = 'playing';
             }
+        }).catch(err => {
+            // resume() 在上下文 closed / interrupted，或缺少用户激活时会 reject。
+            // 不接住的话 isPlaying 永远不翻转、按钮一直显示播放图标，
+            // 用户反复点击却没有任何反馈也没有报错。
+            console.error('AudioContext resume failed:', err);
+            isPlaying = false;
+            setPlayPauseButtonState(false);
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.playbackState = 'paused';
+            }
         });
     };
 
@@ -1269,7 +1281,10 @@ document.addEventListener('DOMContentLoaded', function () {
             visualizerAnimationFrame = null;
         }
         if (visualizerCanvas && visualizerCtx) {
-            visualizerCtx.clearRect(0, 0, visualizerCanvas.width, visualizerCanvas.height);
+            // 用 CSS 像素而非 canvas.width/height：后备存储按 devicePixelRatio
+            // 放大后，上下文带着 setTransform(dpr,...)，用后备存储尺寸会把
+            // 清除区域放大 dpr 倍
+            visualizerCtx.clearRect(0, 0, visualizerCanvas.clientWidth, visualizerCanvas.clientHeight);
         }
     }
 
@@ -1283,11 +1298,31 @@ document.addEventListener('DOMContentLoaded', function () {
         }
         visualizerAnimationFrame = requestAnimationFrame(drawVisualizer);
 
+        // 绘制坐标一律用 CSS 像素，下面所有计算都无需考虑 dpr
         const width = visualizerCanvas.clientWidth;
         const height = visualizerCanvas.clientHeight;
-        if (visualizerCanvas.width !== width || visualizerCanvas.height !== height) {
-            visualizerCanvas.width = width;
-            visualizerCanvas.height = height;
+
+        // 后备存储按 devicePixelRatio 放大后再由 setTransform 缩回来。
+        // 不做这步的话，2x 屏上 1200 个物理像素会被拉伸到 2400 显示，频谱发虚。
+        // 逐帧比对尺寸与 DPR，因此窗口 resize、浏览器缩放、跨不同缩放比的
+        // 显示器拖动都能自动捕获，不需要额外的 resize / matchMedia 监听。
+        const dpr = window.devicePixelRatio || 1;
+        // 必须取整：width * dpr 可能是小数，而 canvas.width 是 unsigned long，
+        // 赋小数会存储为取整后的值。若不先取整，存进去的值与下次比较的
+        // 原始小数永远不相等，导致每帧都重新分配后备存储（持续 GC 压力）。
+        const pixelWidth = Math.round(width * dpr);
+        const pixelHeight = Math.round(height * dpr);
+        // dpr 也要一起比较：仅比后备存储尺寸不够。跨屏拖动时若 CSS 宽度与 DPR
+        // 恰好相互抵消（如 2x 屏 1000px → 1x 屏 2000px，pixelWidth 都是 2000），
+        // 尺寸判断不成立，变换就会停留在旧 DPR 上，画面按错误倍率绘制。
+        if (visualizerCanvas.width !== pixelWidth || visualizerCanvas.height !== pixelHeight
+            || appliedDpr !== dpr) {
+            appliedDpr = dpr;
+            visualizerCanvas.width = pixelWidth;
+            visualizerCanvas.height = pixelHeight;
+            // 必须在改 width/height 之后：这两个赋值会重置整个绘图上下文
+            // （变换、裁剪区、样式全部丢失），缩放要重新应用
+            visualizerCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
         }
 
         const bufferLength = analyserNode.frequencyBinCount;
@@ -1572,6 +1607,13 @@ document.addEventListener('DOMContentLoaded', function () {
                     });
                     selectedSongs.clear();
                 } else {
+                    // 与取消全选对称：先清掉所有行的残留选中态，再只给可见行加上。
+                    // 搜索过滤只改 display、不会清 .selected，隐藏行上可能还留着
+                    // 之前 Ctrl 点选的痕迹；不先清除，删除时会把用户此刻看不见、
+                    // 也并未选中的歌一起删掉。
+                    allItems.forEach(item => {
+                        item.classList.remove('selected');
+                    });
                     songItems.forEach(item => {
                         item.classList.add('selected');
                     });
@@ -1616,6 +1658,11 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
         // 检查是否有音频文件，如果已存在则置顶
+        // 先把已存在的歌曲收集起来，循环结束后一次性按原顺序移到顶部。
+        // 若在循环里逐个 unshift，每命中一个就插一次头部，重复导入同一文件夹
+        // 会把原有顺序完全反转（[A,B,C] → 处理后变成 [C,B,A]）。
+        const existingToPromote = [];
+        const seenInBatch = new Set();
         Array.from(files).forEach(file => {
             if (file.type.startsWith('audio/')) {
                 // 获取文件路径：优先使用 webkitRelativePath（包含文件夹路径），否则使用文件名
@@ -1627,15 +1674,14 @@ document.addEventListener('DOMContentLoaded', function () {
                 // 2. 不同子文件夹可能有同名文件，但同名同大小的概率极低
                 // 3. 同文件不同方式添加时，文件名和大小一定相同
                 const dedupeKey = `${file.name}|${file.size}`;
+                if (seenInBatch.has(dedupeKey)) return;
+                seenInBatch.add(dedupeKey);
 
                 // 检查歌曲列表中是否已有相同文件
                 const existingIndex = songs.findIndex(s => `${s.name}|${s.size}` === dedupeKey);
 
                 if (existingIndex > -1) {
-                    // 已存在：移动到顶部
-                    const existingSong = songs[existingIndex];
-                    songs.splice(existingIndex, 1);
-                    songs.unshift(existingSong);
+                    existingToPromote.push(songs[existingIndex]);
                     reordered = true;
                 } else {
                     // 不存在：添加新歌曲，同时存储路径用于去重
@@ -1643,6 +1689,19 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }
         });
+
+        // 从原列表中摘出要置顶的（保持彼此相对顺序），再统一放到最前
+        if (existingToPromote.length > 0) {
+            const promoteSet = new Set(existingToPromote);
+            let writeIndex = 0;
+            for (let readIndex = 0; readIndex < songs.length; readIndex++) {
+                if (!promoteSet.has(songs[readIndex])) {
+                    songs[writeIndex++] = songs[readIndex];
+                }
+            }
+            songs.length = writeIndex;
+            songs.unshift(...existingToPromote);
+        }
 
         // 如果有新歌曲，添加到数组顶部
         if (newSongs.length > 0) {
@@ -1914,13 +1973,19 @@ document.addEventListener('DOMContentLoaded', function () {
         const songItems = songList.querySelectorAll('.song-item');
         let hasMatch = false;
 
-        songItems.forEach((item) => {
+        songItems.forEach((item, index) => {
             const songName = item.textContent.toLowerCase();
             if (searchTerm === '' || songName.includes(searchTerm)) {
                 item.style.display = '';
                 hasMatch = true;
             } else {
                 item.style.display = 'none';
+                // 被过滤隐藏的行必须同时摘掉选中态（DOM 类与 selectedSongs 都要），
+                // 否则删除时会把用户此刻看不见、也没打算删的歌一起删掉
+                item.classList.remove('selected');
+                if (songs[index]) {
+                    selectedSongs.delete(songs[index]);
+                }
             }
         });
 
@@ -1932,6 +1997,8 @@ document.addEventListener('DOMContentLoaded', function () {
         } else {
             searchInput.classList.remove('error');
         }
+        // 过滤可能清掉了部分选中项，按钮可用性要跟着更新
+        updatePlaylistActions();
     }
 
     // 重建播放列表。
@@ -2161,7 +2228,11 @@ document.addEventListener('DOMContentLoaded', function () {
         stopVisualizer();
         setPlayPauseButtonState(false);
         if ('mediaSession' in navigator) {
-            navigator.mediaSession.playbackState = 'paused';
+            // 播放列表已空，没有可恢复的媒体。'paused' 的语义是"有媒体且可恢复"，
+            // 此时应为 'none'，否则系统媒体控件会为一个空播放器
+            // 继续显示可播放的按钮
+            navigator.mediaSession.playbackState = 'none';
+            navigator.mediaSession.metadata = null;
         }
         progressBar.style.width = '0%';
         // 恢复默认配色与图标
@@ -2370,6 +2441,13 @@ document.addEventListener('DOMContentLoaded', function () {
         pitchShifter.percentagePlayed = perc;
 
         if (wasPlaying) {
+            // 播放中也要立刻更新 currentSeek：它平时只由音频量子回调刷新
+            // （bufferSize=16384 @48kHz ≈ 341ms 一次），而 seekbackward/
+            // seekforward 和方向键都以它为基准。连按三次会全部读到同一个
+            // 陈旧值，结果只前进一次而不是三次。
+            currentSeek = perc * duration;
+            progressBar.style.width = `${perc * 100}%`;
+            updateMediaPosition(currentSeek, duration);
             play();
         } else if (resumeIfPaused) {
             resumeSong();
@@ -2740,8 +2818,22 @@ document.addEventListener('DOMContentLoaded', function () {
             songs.unshift(songData);
             currentSongIndex = 0;
 
+            // 重建列表前清理多选状态：renderSongList 会把 DOM 全部重建，
+            // 行的 .selected 类随之消失，而 selectedSongs 仍持有旧引用、
+            // updatePlaylistActions 也没被调用。结果是删除按钮显示可点，
+            // 点了却因为 DOM 上找不到选中项而什么都不删。
+            selectedSongs.clear();
+            lastSelectedSong = null;
+            if (multiSelectMode) {
+                multiSelectMode = false;
+                if (multiSelectBtn) multiSelectBtn.classList.remove('active');
+                songList.classList.remove('multi-select-mode');
+                if (selectAllBtn) selectAllBtn.classList.add('hidden');
+            }
+
             // 重新渲染列表
             renderSongList();
+            updatePlaylistActions();
         }
 
         currentSeek = 0;
@@ -2914,13 +3006,25 @@ document.addEventListener('DOMContentLoaded', function () {
         const artist = (meta && meta.artist) || 'Unknown Artist';
         const album = (meta && meta.album) || 'Unknown Album';
 
+        // data URL 自带真实 MIME，不能一律声明 image/jpeg：
+        // 声明错类型时应用内封面正常（直接用 data URL），
+        // 但系统媒体控件/系统通知会因类型校验拒绝而显示不出图
+        let imageType = 'image/jpeg';
+        if (base64.startsWith('data:image/png')) {
+            imageType = 'image/png';
+        } else if (base64.startsWith('data:image/webp')) {
+            imageType = 'image/webp';
+        } else if (base64.startsWith('data:image/gif')) {
+            imageType = 'image/gif';
+        }
+
         if ('mediaSession' in navigator) {
             navigator.mediaSession.metadata = new MediaMetadata({
                 title: title,
                 artist: artist,
                 album: album,
                 artwork: [
-                    {src: base64, sizes: '512x512', type: 'image/jpeg'}
+                    {src: base64, sizes: '512x512', type: imageType}
                 ]
             });
         }
@@ -3025,10 +3129,12 @@ document.addEventListener('DOMContentLoaded', function () {
                         let removedPlaying = false;
                         let playingSongOriginalIndex = currentSongIndex;
 
-                        const allItems = Array.from(songList.querySelectorAll('.song-item'));
+                        // 以 selectedSongs 为准反查下标，而不是扫描 DOM 的 .selected 类。
+                        // DOM 类只是表现，会被 renderSongList 重建、被过滤隐藏而丢失；
+                        // 一旦两者不同步，扫描 DOM 就会删掉用户看不见也没选中的歌。
                         const indicesToRemove = [];
-                        allItems.forEach((item, index) => {
-                            if (item.classList.contains('selected')) {
+                        songs.forEach((song, index) => {
+                            if (selectedSongs.has(song)) {
                                 if (index === currentSongIndex) {
                                     removedPlaying = true;
                                 }

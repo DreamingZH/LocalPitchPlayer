@@ -2,6 +2,8 @@ import http.server
 import socketserver
 import webbrowser
 import os
+import posixpath
+import urllib.parse
 
 PORT = 18089
 
@@ -11,23 +13,36 @@ PORT = 18089
 BIND_HOST = "127.0.0.1"
 
 # 不对外暴露的目录：即便有人改成对外监听，也不会被下载
-BLOCKED_PREFIXES = ("/.git/", "/dist/", "/node_modules/", "/__pycache__/")
+BLOCKED = (".git", "dist", "node_modules", "__pycache__", ".idea")
+
+
+def is_blocked(raw_path):
+    """判断请求路径是否指向敏感目录。
+
+    必须先规范化再做判断：直接对原始字符串做前缀匹配会被
+    /.git%2fconfig、/./.git/config、/../.git/config 等写法绕过。
+    """
+    path = urllib.parse.urlsplit(raw_path).path
+    # %2f 等编码先解码，否则 /.git%2fconfig 规范化后仍不以 /.git/ 开头
+    path = urllib.parse.unquote(path)
+    # 统一分隔符、解析 . 与 ..、去掉重复斜杠
+    path = posixpath.normpath(path)
+    parts = [p for p in path.split("/") if p and p != "."]
+    return any(p in BLOCKED for p in parts)
 
 
 class Handler(http.server.SimpleHTTPRequestHandler):
     """在默认静态文件服务基础上屏蔽敏感目录。"""
 
     def send_head(self):
-        # 先判断路径（含查询串之外的纯路径，大小写与 .// 归一化交给父类）
-        path = self.path.split("?", 1)[0].split("#", 1)[0]
-        if any(path.startswith(p) for p in BLOCKED_PREFIXES):
+        if is_blocked(self.path):
             self.send_error(404, "Not Found")
             return None
         return super().send_head()
 
     def list_directory(self, path):
         # 目录列表同样屏蔽
-        if any(path.startswith(p) for p in BLOCKED_PREFIXES):
+        if is_blocked(path):
             self.send_error(404, "Not Found")
             return None
         return super().list_directory(path)
