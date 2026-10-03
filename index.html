@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file: 'unsafe-inline' https://cdnjs.cloudflare.com; style-src 'self' file: 'unsafe-inline' https://cdnjs.cloudflare.com; font-src 'self' file: data: https://cdnjs.cloudflare.com; img-src 'self' file: data: blob: https:; media-src 'self' file: blob:; connect-src 'self' file: https:; object-src 'none'; base-uri 'none'; form-action 'none';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file:; script-src 'self' file: 'unsafe-inline'; style-src 'self' file: 'unsafe-inline'; font-src 'self' file: data:; img-src 'self' file: data: blob: https:; media-src 'self' file: blob:; connect-src 'self' file: https:; object-src 'none'; base-uri 'none'; form-action 'none';">
     <meta name="viewport"
           content="width=device-width, initial-scale=1.0, minimum-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Music Player</title>
@@ -23,7 +23,7 @@
         })();
     </script>
 
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" rel="stylesheet">
+    <link href="./static/vendor/fontawesome/css/all.min.css" rel="stylesheet">
 
     <meta name="apple-mobile-web-app-title" content="Music Player">
     <meta name="mobile-web-app-capable" content="yes">
@@ -36,7 +36,15 @@
     <link rel="apple-touch-icon" sizes="180x180" href="./static/img/icon/apple-touch-icon.png">
     <link rel="icon" type="image/png" sizes="32x32" href="./static/img/icon/favicon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="./static/img/icon/favicon-16x16.png">
-    <link rel="manifest" href="./static/img/icon/site.webmanifest">
+
+    <script>
+        if (location.protocol === 'http:' || location.protocol === 'https:') {
+            var manifestLink = document.createElement('link');
+            manifestLink.rel = 'manifest';
+            manifestLink.href = './static/img/icon/site.webmanifest';
+            document.head.appendChild(manifestLink);
+        }
+    </script>
 </head>
 
 <body>
@@ -170,12 +178,15 @@
     </footer>
 </div>
 <script src="./static/js/i18n.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+<script src="./static/vendor/jsmediatags.min.js"></script>
 <script src="./static/js/main.js"></script>
 <script>
     (function () {
         var plugin = document.createElement('script');
         plugin.src = './static/js/player.js';
+        plugin.async = true;
+        plugin.onerror = function () {
+        };
         (document.body || document.head).appendChild(plugin);
     })();
 </script>

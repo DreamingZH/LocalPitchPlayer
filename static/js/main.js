@@ -2527,8 +2527,9 @@ document.addEventListener('DOMContentLoaded', function () {
         const myCoverId = ++coverRequestId;
 
         if (typeof window.jsmediatags === 'undefined') {
-            // jsmediatags 走 CDN，加载失败时不能直接返回：
-            // 否则上一首歌的封面、主题色与 favicon 会一直留着。
+            // jsmediatags 是本地资源，正常不会缺失；真缺失（文件没部署全、
+            // 解析报错）时不能直接返回，否则上一首歌的封面、主题色与
+            // favicon 会一直留着。
             resetToDefaultCover(title, myCoverId);
             return;
         }
